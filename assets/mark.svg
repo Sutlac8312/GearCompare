@@ -1,6 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
-  <style>@media (prefers-color-scheme: dark) { g { stroke: #ffcd8b; } }</style>
-  <g fill="none" stroke="#8c4618" stroke-width="2.6" stroke-linecap="round">
+  <g fill="none" stroke="#d3541b" stroke-width="2.6" stroke-linecap="round">
     <rect x="3.5" y="12" width="13.5" height="20" rx="3.5"/>
     <rect x="23" y="7" width="13.5" height="20" rx="3.5"/>
     <path d="M7.8 26h4.9m14.6-5h4.9"/>
