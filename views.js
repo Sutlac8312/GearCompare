@@ -1,20 +1,26 @@
 import { categories } from './catalog.js';
-import { catalog, activeUser, favorites, preferences, productOffers, bestPrice, getProduct, getStore } from './store.js';
-import { icon, html, money, dateLabel, title, productLink, productLinkText, select, table, empty, priceChart } from './ui.js';
+import { catalog, activeUser, favorites, preferences, productOffers, bestPrice, getProduct, getStore, usesDatabaseCatalog, databasePricingAvailable } from './store.js';
+import { comparisonSpecs, detailFields, pickupRows, speakerSummary, specificationGroups, technicalGroups } from './specifications.js';
+import { icon, html, money, dateLabel, title, productLink, productLinkText, options, select, table, empty, priceChart } from './ui.js';
 
-const categoryChoices = Object.entries(categories).map(([key, { name }]) => [key, name]);
+const categoryChoices = () => Object.entries(categories).map(([key, { name }]) => [key, name]);
 const productChoices = () => catalog.products.map((product) => [product.id, title(product)]);
 const storeChoices = () => catalog.stores.map(({ id, name }) => [id, name]);
 const catalogLink = '<a class="button button-primary" href="#urunler">Ürünleri keşfet</a>';
 const demoNote = '<p class="note">Mağazalar, teklifler ve fiyat geçmişi demo verisidir. Ürün görselleri temsilidir.</p>';
+const pricingUnavailable = 'Mağaza fiyatları şu anda kullanılamıyor.';
+const catalogNote = () => usesDatabaseCatalog
+  ? `<p class="note">Ürün görselleri temsilidir.${databasePricingAvailable ? '' : ` ${pricingUnavailable}`}</p>`
+  : demoNote;
 const priceCell = (price) => `<span class="numeric">${money(price)}</span>`;
 const sortName = (a, b) => a.localeCompare(b, 'tr-TR');
 
 const foldSearch = (text) => text.toLocaleLowerCase('tr-TR').replaceAll('ı', 'i').normalize('NFD').replace(/\p{Diacritic}/gu, '');
 
 function storeLink(store) {
-  return store.website
-    ? `<a class="text-link" href="${html(store.website)}" target="_blank" rel="noopener noreferrer">${html(store.name)}</a>`
+  const website = webUrl(store.website);
+  return website
+    ? `<a class="text-link" href="${html(website)}" target="_blank" rel="noopener noreferrer">${html(store.name)}</a>`
     : html(store.name);
 }
 
@@ -44,10 +50,22 @@ export function footer() {
   </div>`;
 }
 
+function webUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+  } catch {
+    return '';
+  }
+  return '';
+}
+
 function productImage(product) {
   const asset = product.image;
-  return asset
-    ? `<img src="assets/${html(asset)}.jpg" alt="" width="512" height="512" decoding="async">`
+  const image = product.imageUrl ?? '';
+  const url = asset ? `assets/${asset}.jpg` : /^assets\/[\w/-]+\.(?:jpe?g|png|webp|avif)$/i.test(image) ? image : webUrl(image);
+  return url
+    ? `<img src="${html(url)}" alt="" width="512" height="512" decoding="async">`
     : icon(categories[product.category].icon);
 }
 
@@ -68,12 +86,12 @@ function productCard(product) {
   return `<article class="product-card">
     <a class="product-image" href="${productLink(product)}" aria-label="${html(title(product))} ürün detayı">${productImage(product)}</a>
     <div class="card-content">
-      <div class="card-brand">${html(product.brand)} <span></span> ${categories[product.category].name}</div>
+      <div class="card-brand">${html(product.brand)} <span></span> ${html(categories[product.category].name)}</div>
       <h3><a href="${productLink(product)}">${html(product.model)}</a></h3>
       <div class="card-bottom">
         <div>
           ${offers.length ? `<strong class="card-price"><span class="sr-only">En düşük fiyat: </span>${money(offers[0].price)}</strong>
-            <div class="store-count">${offers.length} mağaza</div>` : '<div class="price-label">Teklif yok</div>'}
+            <div class="store-count">${offers.length} mağaza</div>` : `<div class="price-label">${usesDatabaseCatalog && !databasePricingAvailable ? 'Fiyat bilgisi yok' : 'Teklif yok'}</div>`}
         </div>
         <div class="card-actions">${compareButton(product)}${favoriteButton(product)}</div>
       </div>
@@ -99,7 +117,8 @@ export function catalogPage(filters) {
     </section>
     <section id="equipment" class="shell equipment" aria-label="Ekipman kataloğu" tabindex="-1">
       <div id="catalog-results">${catalogResults(filters)}</div>
-      ${demoNote}
+      ${usesDatabaseCatalog ? '<p class="note">Katalog kaynağı MySQL</p>' : ''}
+      ${catalogNote()}
     </section>`;
 }
 
@@ -123,9 +142,9 @@ export function catalogResults(filters) {
       return direction * (first - second);
     });
   }
-  const buttons = [['', 'Tümü'], ...categoryChoices];
+  const buttons = [['', 'Tümü'], ...categoryChoices()];
   return `<div class="categories" role="group" aria-label="Ekipman kategorisi">
-      ${buttons.map(([id, name]) => `<button class="category" type="button" data-category="${id}" aria-pressed="${filters.category === id}">${name}</button>`).join('')}
+      ${buttons.map(([id, name]) => `<button class="category" type="button" data-category="${html(id)}" aria-pressed="${filters.category === id}">${html(name)}</button>`).join('')}
     </div>
     <div class="catalog-controls">
       <span class="result-count" role="status">${products.length} ürün</span>
@@ -134,60 +153,98 @@ export function catalogResults(filters) {
         ${select('sort-filter', 'Ürünleri sırala', [['default', 'Varsayılan sıra'], ['low', 'En düşük fiyat'], ['high', 'En yüksek fiyat'], ['name', 'Ürün adı A–Z']], filters.sort)}
       </div>
     </div>
-    ${products.length ? grid(products) : empty('search', 'Ürün bulunamadı', 'Başka bir marka veya model ara ya da filtreleri temizle.', '<button class="button button-outline" data-reset-filters>Filtreleri temizle</button>')}`;
+    ${products.length ? grid(products)
+      : catalog.products.length === 0 ? empty('search', 'Katalog boş', 'MySQL’e ürün eklendiğinde burada görünecek.')
+        : empty('search', 'Ürün bulunamadı', 'Başka bir marka veya model ara ya da filtreleri temizle.', '<button class="button button-outline" data-reset-filters>Filtreleri temizle</button>')}`;
 }
 
-export function productPage(product, selectedOffer) {
+function technicalPanel(product, type) {
+  const source = webUrl(product.source);
+  const groups = technicalGroups(product, type);
+  const pickups = pickupRows(product);
+  const speakers = speakerSummary(product);
+  const specs = groups.map(([heading, rows]) => `<section class="spec-group"><h3>${heading}</h3>
+    <dl class="spec-list">${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${html(value)}</dd></div>`).join('')}</dl>
+  </section>`).join('');
+  return `<section class="panel">
+    <div class="section-heading">
+      <h2>Teknik özellikler</h2>
+      ${source ? `<a class="text-link source" href="${html(source)}" target="_blank" rel="noopener noreferrer">Üretici bilgileri</a>` : ''}
+    </div>
+    ${groups.length || pickups.length || speakers ? `<div class="specification-grid">
+      ${specs}
+      ${pickups.length ? `<section class="spec-group"><h3>Manyetikler</h3>
+        ${table(['Konum', 'Tip', 'Model'], pickups.map((row) => row.map((value) => html(value || '—'))), 'Manyetikler')}
+      </section>` : ''}
+      ${speakers ? `<section class="spec-group"><h3>Hoparlörler</h3><p>${html(speakers)}</p></section>` : ''}
+    </div>` : '<p>Bu ürün için henüz teknik bilgi eklenmemiş.</p>'}
+  </section>`;
+}
+
+function priceHistory(offer, offers, request) {
+  if (!offer && !usesDatabaseCatalog) return '';
+  const points = usesDatabaseCatalog ? request?.points : offer.history;
+  let content;
+  if (request?.state === 'loading') {
+    content = '<p role="status">Fiyat geçmişi yükleniyor…</p>';
+  } else if (request?.state === 'error') {
+    content = '<p role="status">Fiyat geçmişi yüklenemedi.</p><button type="button" class="button button-outline" data-retry-history>Tekrar dene</button>';
+  } else if (!points?.length) {
+    content = '<p>Bu ürün için henüz fiyat geçmişi yok.</p>';
+  } else {
+    content = `<div class="chart-wrap">${priceChart(points)}</div>
+      ${usesDatabaseCatalog && points.length === 90 ? '<p class="note">En güncel 90 fiyat kaydı gösteriliyor.</p>' : ''}
+      <details><summary>Fiyat kayıtlarını göster</summary>
+        ${table(['Tarih', 'Fiyat'], points.slice().reverse().map(({ date, price }) => [dateLabel(date), priceCell(price)]), 'Fiyat geçmişi kayıtları')}
+      </details>`;
+  }
+  return `<section class="panel history">
+    <div class="section-heading"><h2>Fiyat geçmişi</h2>
+      ${offer ? select('history-offer', 'Fiyat geçmişi için mağaza seç', offers.map((item) => [item.id, getStore(item.store).name]), offer.id) : ''}
+    </div>${content}
+  </section>`;
+}
+
+export function productPage(product, offers, offer, historyRequest) {
   const category = categories[product.category];
-  const offers = productOffers(product.id);
-  const offer = offers.find((item) => item.id === selectedOffer) ?? offers[0];
+  const pricesUnavailable = usesDatabaseCatalog && !databasePricingAvailable;
   return `<div class="shell interior">
     <a class="back-link" href="#urunler">${icon('back')} Ürünler</a>
     <section class="detail-intro">
       <div class="product-image detail-image">${productImage(product)}</div>
       <div class="detail-copy">
-        <div class="card-brand">${html(product.brand)} <span></span> ${category.name}</div>
+        <div class="card-brand">${html(product.brand)} <span></span> ${html(category.name)}</div>
         <h1>${html(product.model)}</h1>
-        <div class="price-label">${offers.length ? 'En düşük fiyat' : 'Teklif yok'}</div>
+        ${product.description ? `<p class="detail-description">${html(product.description)}</p>` : ''}
+        <div class="price-label">${offers.length ? 'En düşük fiyat' : pricesUnavailable ? 'Fiyat bilgisi yok' : 'Teklif yok'}</div>
         <div class="detail-price">${money(offers[0]?.price)}</div>
         <div class="inline-actions">
-          ${offers.length ? `<button type="button" class="button button-primary" data-price-alert="${html(product.id)}">${icon('bell')} Fiyat alarmı kur</button>` : ''}
+          ${offers.length && !usesDatabaseCatalog ? `<button type="button" class="button button-primary" data-price-alert="${html(product.id)}">${icon('bell')} Fiyat alarmı kur</button>` : ''}
           ${favoriteButton(product, true)}${compareButton(product)}
         </div>
       </div>
     </section>
     <div class="detail-panels">
+      ${technicalPanel(product, category.type)}
       <section class="panel"><h2>Mağaza fiyatları</h2>
         ${offers.length ? table(['Mağaza', 'Fiyat'], offers.map((item) => [
           storeLink(getStore(item.store)), priceCell(item.price),
-        ]), 'Mağaza fiyatları') : '<p>Bu ürün için henüz mağaza teklifi yok.</p>'}
-      </section>
-      <section class="panel"><h2>Teknik özellikler</h2>
-        <dl class="spec-list">${category.specs.map((label, i) => `<div><dt>${label}</dt><dd>${html(product.values[i])}</dd></div>`).join('')}</dl>
-        ${product.source ? `<a class="text-link source" href="${html(product.source)}" target="_blank" rel="noopener noreferrer">Üretici bilgileri</a>` : ''}
+        ]), 'Mağaza fiyatları') : `<p>${pricesUnavailable ? pricingUnavailable : 'Bu ürün için henüz mağaza teklifi yok.'}</p>`}
       </section>
     </div>
-    ${offer ? `<section class="panel history">
-      <div class="section-heading"><h2>Fiyat geçmişi</h2>${select('history-offer', 'Fiyat geçmişi için mağaza seç', offers.map((item) => [item.id, getStore(item.store).name]), offer.id)}</div>
-      <div class="chart-wrap">${priceChart(offer.history)}</div>
-      <details><summary>Fiyat kayıtlarını göster</summary>
-        ${table(['Tarih', 'Fiyat'], offer.history.slice().reverse().map((item) => [dateLabel(item.date), priceCell(item.price)]), 'Fiyat geçmişi kayıtları')}
-      </details>
-    </section>` : ''}
-    ${demoNote}
+    ${priceHistory(offer, offers, historyRequest)}
+    ${usesDatabaseCatalog ? '<p class="note">Ürün görselleri temsilidir.</p>' : demoNote}
   </div>`;
 }
 
 export function comparePage() {
   const [first, second] = preferences.compare.map(getProduct);
+  const specs = [first, second].map((product) => comparisonSpecs(product, categories[product?.category]?.type));
   const rows = [
-    ['Kategori', ...[first, second].map((product) => product ? categories[product.category].name : '—')],
+    ['Kategori', ...[first, second].map((product) => product ? html(categories[product.category].name) : '—')],
     ['En düşük fiyat', ...[first, second].map((product) => priceCell(product && bestPrice(product.id)))],
-    ...[...new Set([first, second].flatMap((product) => product ? categories[product.category].specs : []))].map((key) => [
-      key, ...[first, second].map((product) => {
-        const index = product ? categories[product.category].specs.indexOf(key) : -1;
-        return index === -1 ? '—' : html(product.values[index]);
-      }),
+    ...Array.from(new Set(specs.flatMap((fields) => [...fields.keys()])), (label) => [
+      label, ...specs.map((fields) => html(fields.get(label) ?? '—').replaceAll('\n', '<br>')),
     ]),
   ];
   const firstOffers = first ? productOffers(first.id) : [];
@@ -210,8 +267,8 @@ export function comparePage() {
     <section class="panel"><h2>Mağaza fiyatları</h2>
       ${offeredStores.length ? table(['Mağaza', html(first.model), html(second.model)], offeredStores.map((id) => [
         html(getStore(id).name), priceCell(firstOffers.find(({ store }) => store === id)?.price), priceCell(secondOffers.find(({ store }) => store === id)?.price),
-      ]), 'Mağazaya göre fiyat karşılaştırması') : '<p>Seçilen ürünler için henüz teklif yok.</p>'}
-    </section>${demoNote}` : ''}
+      ]), 'Mağazaya göre fiyat karşılaştırması') : `<p>${usesDatabaseCatalog && !databasePricingAvailable ? pricingUnavailable : 'Seçilen ürünler için henüz teklif yok.'}</p>`}
+    </section>${usesDatabaseCatalog ? '<p class="note">Ürün görselleri temsilidir.</p>' : demoNote}` : ''}
   </div>`;
 }
 
@@ -255,13 +312,13 @@ export function accountPage(tab, registration) {
   } else if (!user) {
     body = empty('user', 'Giriş yap', 'Fiyat alarmlarını ve bildirimlerini görmek için giriş yap.', '<a class="button button-primary" href="#hesabim/hesap">Giriş yap</a>');
   } else if (tabId === 'alarmlar') {
-    const alerts = catalog.alerts.filter((item) => item.user === user.id);
+    const alerts = catalog.alerts.filter((item) => item.user === user.id && getProduct(item.product));
     body = alerts.length ? `<section class="panel"><h2>Fiyat alarmlarım</h2>${table(['Ürün', 'Hedef fiyat', 'İşlem'], alerts.map((alert) => [
       productLinkText(getProduct(alert.product)), priceCell(alert.target),
       `<button type="button" class="button button-outline" data-remove-alert="${html(alert.id)}">Alarmı sil</button>`,
     ]), 'Fiyat alarmları')}</section>` : empty('bell', 'Henüz fiyat alarmın yok', 'Ürün detayında hedef fiyat belirle. Bir teklif hedefe ulaştığında burada bildirim görürsün.', catalogLink);
   } else {
-    const notifications = catalog.notifications.filter((item) => item.user === user.id);
+    const notifications = catalog.notifications.filter((item) => item.user === user.id && getProduct(item.product));
     body = notifications.length ? `<section class="panel"><h2>Fiyat bildirimlerim</h2>${table(['Ürün', 'Mağaza', 'Fiyat', 'Tarih'], notifications.map((item) => [
       productLinkText(getProduct(item.product)), html(getStore(item.store).name), priceCell(item.price), dateLabel(item.date),
     ]), 'Fiyat bildirimleri')}</section>` : empty('bell', 'Henüz bildirim yok', 'Bir mağaza teklifinde hedef fiyatına ulaşıldığında burada görünecek.');
@@ -287,9 +344,9 @@ export function alertContents(product) {
 }
 
 export function reportsPage(filters) {
-  const choices = filters.group === 'store' ? storeChoices() : categoryChoices;
+  const choices = filters.group === 'store' ? storeChoices() : categoryChoices();
   const groupId = (offer) => filters.group === 'store' ? offer.store : getProduct(offer.product).category;
-  const groupOffers = catalog.offers.filter((offer) => !filters.value || groupId(offer) === filters.value);
+  const groupOffers = catalog.offers.filter((offer) => getProduct(offer.product) && (!filters.value || groupId(offer) === filters.value));
   const groups = choices.filter(([id]) => !filters.value || filters.value === id).map(([id, name]) => {
     const offers = groupOffers.filter((offer) => groupId(offer) === id);
     const prices = offers.map(({ price }) => price);
@@ -325,22 +382,66 @@ export function reportsPage(filters) {
   </div>`;
 }
 
-export function adminSpecs(category) {
-  return (categories[category]?.specs ?? []).map((label, i) => `<label>${label}<input name="spec-${i}" type="${label === 'Tel sayısı' ? 'number' : 'text'}"${label === 'Tel sayısı' ? ' min="1" max="24"' : ' maxlength="80"'} required></label>`).join('');
+function specInput(field, prefix = '') {
+  const { key, label, unit, required, min, max, step } = field;
+  const name = prefix + key;
+  const choices = field.boolean ? { yes: 'Var', no: 'Yok' } : field.choices;
+  const constraint = required ? ' required' : '';
+  const control = choices
+    ? `<span class="select-wrap"><select name="${name}" aria-label="${label}"${constraint}>
+      ${options([['', required ? 'Seç' : 'Belirtilmedi'], ...Object.entries(choices)], '')}
+    </select>${icon('chevron')}</span>`
+    : `<input name="${name}"${step ? ` type="number" min="${min}" max="${max}" step="${step}"` : ' maxlength="120"'}${constraint}>`;
+  return `<label>${label}${unit ? ` (${unit})` : ''}${control}</label>`;
+}
+
+export function adminSpecRow(relation) {
+  const remove = relation === 'pickups' ? 'Manyetiği kaldır' : 'Hoparlörü kaldır';
+  return `<div class="spec-entry" data-spec-entry>
+    <div class="spec-form-grid">${detailFields[relation].map((field) => specInput(field, `${relation}-`)).join('')}</div>
+    <button type="button" class="icon-button" data-remove-spec-row aria-label="${remove}" title="${remove}">${icon('close')}</button>
+  </div>`;
+}
+
+export function adminSpecs(type) {
+  const groups = specificationGroups[type];
+  const required = groups.flatMap(([, fields]) => fields.filter((field) => field.required));
+  const relation = { GUITAR: ['pickups', 'Manyetikler', 'Manyetik ekle'], AMPLIFIER: ['speakers', 'Hoparlörler', 'Hoparlör ekle'] }[type];
+  return `<div class="spec-form-grid">${required.map((field) => specInput(field)).join('')}</div>
+    <details class="spec-options">
+      <summary>Diğer teknik özellikler</summary>
+      ${groups.map(([heading, fields]) => `<fieldset><legend>${heading}</legend>
+        <div class="spec-form-grid">${fields.filter((field) => !field.required).map((field) => specInput(field)).join('')}</div>
+      </fieldset>`).join('')}
+    </details>
+    ${relation ? `<fieldset class="spec-relation">
+      <legend>${relation[1]}</legend>
+      <div class="spec-entries" data-spec-rows></div>
+      <button type="button" class="button button-outline" data-add-spec-row="${relation[0]}">${icon('plus')}${relation[2]}</button>
+    </fieldset>` : ''}`;
 }
 
 export function adminPage() {
+  if (usesDatabaseCatalog) return `<div class="shell interior">
+    <div class="page-heading"><h1>Yönetici paneli</h1><p>Ürün kataloğunu ve fiyat kayıtlarını MySQL üzerinden yönet.</p></div>
+  </div>`;
   return `<div class="shell interior">
     <div class="page-heading"><h1>Yönetici paneli</h1><p>Ürün, mağaza ve teklifleri yerel demo verisinde yönet.</p></div>
     ${preferences.demoAdmin ? `<div class="admin-grid">
       <section class="panel"><h2>Ürün ekle</h2><form class="form" data-admin="product">
         <label>Marka<input name="brand" required maxlength="50"></label>
         <label>Model<input name="model" required maxlength="80"></label>
-        <label>Kategori${select('admin-category', 'Ürün kategorisi', categoryChoices, 'electro', true)}</label>
-        <div class="form" id="admin-specs">${adminSpecs('electro')}</div>
+        <label>Kategori${select('admin-category', 'Ürün kategorisi', categoryChoices(), 'electro', true)}</label>
+        <div class="form" id="admin-specs" data-product-type="GUITAR">${adminSpecs('GUITAR')}</div>
+        <details class="spec-options">
+          <summary>Ürün açıklaması ve kaynak</summary>
+          <label>Açıklama<textarea name="description" rows="3" maxlength="500"></textarea></label>
+          <label>Üretici sayfası<input name="source" type="url" maxlength="500" placeholder="https://"></label>
+        </details>
         <p class="form-error" role="alert"></p>
         <button class="button button-primary" type="submit">Ürün ekle</button>
       </form></section>
+      <div>
       <section class="panel"><h2>Mağaza ekle</h2><form class="form" data-admin="store">
         <label>Mağaza adı<input name="name" required maxlength="70"></label>
         <label>Web sitesi (isteğe bağlı)<input name="website" type="url" maxlength="200" placeholder="https://"></label>
@@ -355,6 +456,7 @@ export function adminPage() {
         <p class="form-error" role="alert"></p>
         <button class="button button-primary" type="submit">Teklifi kaydet</button>
       </form></section>
+      </div>
       </div><button class="button button-outline admin-exit" type="button" data-admin-mode>Demo yönetiminden çık</button>`
       : `<section class="panel compact"><h2>Demo yönetimi</h2><p>Eklediğin kayıtlar ve fiyat güncellemeleri bu tarayıcıya kaydedilir.</p><button class="button button-primary" type="button" data-admin-mode>Demo yönetimini aç</button></section>`}
   </div>`;

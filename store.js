@@ -1,7 +1,12 @@
-import { initialCatalog } from './catalog.js';
+import { categories, expandSeedSpecifications, initialCatalog } from './catalog.js';
 
 const catalogKey = 'gearcompare.catalog.v1';
 const preferenceKey = 'gearcompare.preferences.v1';
+export const usesDatabaseCatalog = document.querySelector('meta[name="gearcompare-catalog"]')?.content === 'mysql';
+let serverProducts = null;
+let databaseOffers = [];
+const databaseStores = new Map();
+export let databasePricingAvailable = false;
 
 function read(storage, key, fallback) {
   try {
@@ -11,13 +16,49 @@ function read(storage, key, fallback) {
   }
 }
 
-export let catalog = read(localStorage, catalogKey, initialCatalog);
+export let catalog = expandSeedSpecifications(read(localStorage, catalogKey, initialCatalog));
 export let preferences = read(sessionStorage, preferenceKey, () => ({ userId: '', demoAdmin: false, compare: [] }));
 
+async function readApi(path) {
+  const response = await fetch(path, { cache: 'no-store', headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`API: HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function loadDatabaseCatalog() {
+  const [products, pricing] = await Promise.all([
+    readApi('api/products'),
+    readApi('api/offers').catch(() => ({ available: false, offers: [] })),
+  ]);
+  for (const { category, categoryName, productType } of products) {
+    Object.defineProperty(categories, category, {
+      value: {
+        name: categoryName,
+        icon: { GUITAR: 'guitar', AMPLIFIER: 'amp', PEDAL: 'pedal' }[productType],
+        type: productType,
+      },
+      writable: true, enumerable: true, configurable: true,
+    });
+  }
+  serverProducts = products;
+  catalog = { ...catalog, products };
+  databasePricingAvailable = pricing.available;
+  databaseStores.clear();
+  databaseOffers = pricing.offers.map(({ id, product, store, price }) => {
+    databaseStores.set(store.id, store);
+    return { id, product, store: store.id, price };
+  });
+  const ids = new Set(products.map(({ id }) => id));
+  preferences = { ...preferences, compare: preferences.compare.map((id) => ids.has(id) ? id : '') };
+}
+
+export const loadPriceHistory = (offerId) => readApi(`api/offers/${encodeURIComponent(offerId)}/history`);
+
 export function commit(change) {
-  const latest = read(localStorage, catalogKey, () => catalog);
+  const saved = expandSeedSpecifications(read(localStorage, catalogKey, initialCatalog));
+  const latest = serverProducts ? { ...saved, products: serverProducts } : saved;
   const result = change(latest);
-  localStorage.setItem(catalogKey, JSON.stringify(latest));
+  localStorage.setItem(catalogKey, JSON.stringify(serverProducts ? { ...latest, products: saved.products } : latest));
   catalog = latest;
   return result;
 }
@@ -28,12 +69,13 @@ export function updatePreferences(change) {
 }
 
 export const getProduct = (id) => catalog.products.find((product) => product.id === id);
-export const getStore = (id) => catalog.stores.find((store) => store.id === id);
+export const getStore = (id) => databaseStores.get(id) ?? catalog.stores.find((store) => store.id === id);
 export const activeUser = () => catalog.users.find((user) => user.id === preferences.userId);
 export const favorites = () => activeUser()?.favorites ?? catalog.guestFavorites;
 
 export function productOffers(id) {
-  return catalog.offers.filter((offer) => offer.product === id).sort((a, b) => a.price - b.price);
+  const offers = usesDatabaseCatalog ? databaseOffers : catalog.offers;
+  return offers.filter((offer) => offer.product === id).sort((a, b) => a.price - b.price);
 }
 
 export const bestPrice = (id) => productOffers(id)[0]?.price;

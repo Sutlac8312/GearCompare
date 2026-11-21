@@ -4,14 +4,42 @@ Gitar, amfi ve efekt pedalları için fiyat karşılaştırma arayüzü. HTML, C
 
 ## Yerel önizleme
 
-Proje klasöründe şu komutu çalıştırıp tarayıcıdan [http://localhost:8000](http://localhost:8000) adresini aç.
+Proje klasöründe şu komutu çalıştırıp tarayıcıdan [http://127.0.0.1:8000](http://127.0.0.1:8000) adresini aç.
 
 ```sh
-python3 -m http.server 8000 --bind 127.0.0.1
+python3 preview.py
 ```
 
 Altı kategoride arama yapabilir, marka filtresi uygulayabilir ve iki ürünü karşılaştırabilirsin. Ürün detayında teknik özellikler ve üretici bağlantısının yanında her mağazanın fiyat geçmişi yer alır.
 
 Fiyat alarmını denemek için örnek bir e-posta ile demo hesabı oluştur ve bir ürünün en düşük teklifinin altında bir hedef belirle. Alt menüdeki **Yönetici paneli** üzerinden tekliflerden birini hedef fiyata veya altına çek. Yeni fiyatı **Ürün detayı**, bildirimi **Hesabım → Bildirimler** ekranında görebilirsin.
 
-Mağazalar, fiyatlar ve fiyat geçmişi örnek veridir. Ürün fotoğrafları temsilidir. Demo kayıtları tarayıcıda saklanır. Sunucu kimlik doğrulaması, Spring Boot ve PostgreSQL bağlantısı frontend kapsamı dışındadır.
+Mağazalar, fiyatlar ve fiyat geçmişi örnek veridir. Ürün fotoğrafları temsilidir. Demo kayıtları tarayıcıda saklanır.
+
+## MySQL kataloğu
+
+1. DBeaver’da `gearcompare_v2` üzerinde [katalog şemasını](output/sql/gearcompare_catalog_mysql.sql) uygula. İlk deneme için [örnek gitarı](output/sql/gearcompare_catalog_seed_mysql.sql) ekleyebilirsin.
+2. Java 17 veya üzeri ve Maven bulunan bir terminalde bağlantı bilgilerini ayarla. Varsayılan MySQL adresi `127.0.0.1:3306/gearcompare_v2`. DBeaver bağlantın farklı bir sunucu veya port kullanıyorsa `DB_URL` değişkenini `jdbc:mysql://SUNUCU:PORT/gearcompare_v2` biçiminde ayarla.
+
+```zsh
+read 'DB_USER?MySQL kullanıcı adı: '
+read -rs 'DB_PASSWORD?MySQL parolası: '
+export DB_USER DB_PASSWORD
+mvn -f backend/pom.xml spring-boot:run
+```
+
+[Siteyi aç](http://127.0.0.1:8080). Katalog ve teknik karşılaştırma, MySQL’deki ürünleri kullanır. API’de [ürün listesi](http://127.0.0.1:8080/api/products) ve [örnek ürün detayı](http://127.0.0.1:8080/api/products/fender-player-ii) üzerinden veriyi kontrol edebilirsin.
+
+### Mağaza fiyatları ve fiyat grafiği
+
+Mağaza fiyatları ve grafik, aynı MySQL veritabanındaki şu tablo ve sütunları okur. Tablo adlarını MySQL şemasında küçük harfle kullan.
+
+| Tablo | Okunan sütunlar |
+| --- | --- |
+| `store` | `store_id`, `name`, `website` |
+| `offer` | `offer_id`, `product_id`, `store_id`, `current_price` |
+| `price_history` | `offer_id`, `recorded_at`, `price` |
+
+`offer.product_id`, `product.product_id` alanına bağlanır. Her ürün ve mağaza eşleşmesinin tek bir teklifi olur. `price_history` için `(offer_id, recorded_at)` birleşik anahtarı ve `recorded_at` için MySQL `TIMESTAMP` kullanılır. En güncel en fazla 90 fiyat kaydı, seçilen mağazanın grafiğinde gösterilir.
+
+Güncel mağaza fiyatları `GET /api/offers`, fiyat geçmişi `GET /api/offers/{offerId}/history` üzerinden gelir. Yalnızca katalog tabloları kuruluysa ürünler ve teknik karşılaştırma çalışır. Fiyatların görünmesi için teklif kayıtları, grafiğin görünmesi için de seçilen teklifin geçmiş kayıtları gerekir.

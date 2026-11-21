@@ -4,11 +4,23 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Gitar, amfi ve pedal modellerini keşfet, mağaza tekliflerini ve fiyat geçmişini karşılaştır.">
-    <meta name="theme-color" content="#232326">
+    <meta name="theme-color" content="#101010">
+    <meta name="gearcompare-catalog" content="@catalog.source@">
     <title>GearCompare · Gitar ekipmanı karşılaştırma</title>
     <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css">
-    <script type="module" src="app.js"></script>
+    <link rel="stylesheet" href="styles.css?v=20261122">
+    <script type="importmap">
+      {
+        "imports": {
+          "./catalog.js": "./catalog.js?v=20261122-4",
+          "./specifications.js": "./specifications.js?v=20261122-4",
+          "./store.js": "./store.js?v=20261122-4",
+          "./ui.js": "./ui.js?v=20261122-4",
+          "./views.js": "./views.js?v=20261122-4"
+        }
+      }
+    </script>
+    <script type="module" src="app.js?v=20261122-4"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">İçeriğe geç</a>

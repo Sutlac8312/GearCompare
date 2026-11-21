@@ -5,7 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GearCompare · Tasarım önizlemesi</title>
   <link rel="stylesheet" href="ekran.css">
-  <script src="ekran.js" type="module"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "../catalog.js": "../catalog.js?v=20261122-2",
+        "../specifications.js": "../specifications.js?v=20261122-2",
+        "../ui.js": "../ui.js?v=20261122-2",
+        "./kimlik.js": "./kimlik.js?v=20261122-2"
+      }
+    }
+  </script>
+  <script src="ekran.js?v=20261122-2" type="module"></script>
 </head>
 <body>
   <header id="site-top" class="site-top"></header>

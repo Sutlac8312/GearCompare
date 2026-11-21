@@ -1,4 +1,5 @@
 import { categories, initialCatalog } from '../catalog.js';
+import { comparisonSpecs } from '../specifications.js';
 import { html, icon, money, options, priceChart, table, title } from '../ui.js';
 import { designs, logos, wordmark } from './kimlik.js';
 
@@ -132,7 +133,8 @@ function details(product) {
         ${table(['Mağaza', 'Fiyat'], listings.map((item) => [storeName(item.store), money(item.price)]), 'Mağaza fiyatları')}
       </section>
       <section class="panel"><h2>Teknik özellikler</h2>
-        <dl>${kind.specs.map((name, i) => `<div><dt>${name}</dt><dd>${html(product.values[i])}</dd></div>`).join('')}</dl>
+        <dl>${Array.from(comparisonSpecs(product, kind.type), ([name, value]) =>
+          `<div><dt>${name}</dt><dd>${html(value).replaceAll('\n', '<br>')}</dd></div>`).join('')}</dl>
       </section>
     </div>
     <section class="panel history-panel"><div class="panel-heading"><h2>Fiyat geçmişi</h2>
@@ -144,13 +146,11 @@ function details(product) {
 function comparePage() {
   const items = [getProduct(comparison[0]), getProduct(comparison[1])];
   const selected = items.filter(Boolean);
-  const fields = [...new Set(selected.flatMap((product) => categories[product.category].specs))];
+  const specs = selected.map((product) => comparisonSpecs(product, categories[product.category].type));
+  const fields = new Set(specs.flatMap((values) => [...values.keys()]));
   const rows = [
     ['En düşük fiyat', ...selected.map((product) => money(price(product.id)))],
-    ...fields.map((key) => [key, ...selected.map((product) => {
-      const index = categories[product.category].specs.indexOf(key);
-      return index === -1 ? '—' : html(product.values[index]);
-    })]),
+    ...Array.from(fields, (key) => [key, ...specs.map((values) => html(values.get(key) ?? '—').replaceAll('\n', '<br>'))]),
     ...stores.map((store) => [store.name, ...selected.map((product) => money(offerings(product.id).find((item) => item.store === store.id)?.price))]),
   ];
   return `<div class="site-shell inner-page"><h1>Ürün karşılaştırma</h1>

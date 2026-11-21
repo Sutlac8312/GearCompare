@@ -1,12 +1,13 @@
 import { categories } from './catalog.js';
+import { readTechnicalSpecifications } from './specifications.js';
 import {
   catalog, preferences, commit, updatePreferences, getProduct, productOffers,
-  activeUser, parsePrice, saveOffer, notifyAlert, passwordDigest,
+  activeUser, parsePrice, saveOffer, notifyAlert, passwordDigest, usesDatabaseCatalog, loadDatabaseCatalog, loadPriceHistory,
 } from './store.js';
 import { empty, money, productLink } from './ui.js';
 import {
   navigation, footer, catalogPage, catalogResults, productPage, comparePage,
-  compareTray, accountPage, alertContents, reportsPage, adminPage, adminSpecs,
+  compareTray, accountPage, alertContents, reportsPage, adminPage, adminSpecs, adminSpecRow,
 } from './views.js';
 
 const main = document.querySelector('#main');
@@ -26,9 +27,11 @@ const initialFilters = () => ({ search: '', category: '', brand: '', sort: 'defa
 let filters = initialFilters();
 let reportFilters = { group: 'store', value: '', days: '30' };
 let historyOffer = '';
+let historyRequest;
 let registration = false;
 let pendingAlert = '';
 let statusTimer;
+let catalogState = usesDatabaseCatalog ? 'loading' : 'ready';
 
 function route() {
   const [page, value] = location.hash.slice(1).split('/');
@@ -44,9 +47,20 @@ function render(focus = '') {
   const product = page === 'urun' ? getProduct(value) : null;
   document.title = `${product ? `${product.brand} ${product.model}` : (Object.hasOwn(pages, page) ? pages[page] : 'Sayfa bulunamadı')} · GearCompare`;
   header.innerHTML = navigation(page === 'urun' ? 'urunler' : page);
+  if (catalogState !== 'ready') {
+    main.innerHTML = `<div class="shell interior">${catalogState === 'loading'
+      ? '<p role="status">MySQL kataloğu yükleniyor…</p>'
+      : empty('store', 'Katalog açılamadı', 'MySQL bağlantısını ve şema ayarlarını kontrol et.', '<button type="button" class="button button-primary" data-retry-catalog>Tekrar dene</button>')}</div>`;
+    return;
+  }
+  const offers = product ? productOffers(product.id) : [];
+  const offer = offers.find(({ id }) => id === historyOffer) ?? offers[0];
+  if (usesDatabaseCatalog && offer && historyRequest?.offerId !== offer.id) {
+    refreshPriceHistory(offer.id);
+  }
   const renderPage = {
     urunler: () => catalogPage(filters),
-    urun: () => product ? productPage(product, historyOffer) : notFound(),
+    urun: () => product ? productPage(product, offers, offer, historyRequest) : notFound(),
     karsilastir: comparePage,
     hesabim: () => accountPage(value, registration),
     raporlar: () => reportsPage(reportFilters),
@@ -55,6 +69,20 @@ function render(focus = '') {
   main.innerHTML = Object.hasOwn(renderPage, page) ? renderPage[page]() : notFound();
   tray.innerHTML = compareTray(page);
   restoreFocus(focus);
+}
+
+async function refreshPriceHistory(offerId) {
+  const request = { offerId, state: 'loading' };
+  historyRequest = request;
+  try {
+    request.points = await loadPriceHistory(offerId);
+    request.state = 'ready';
+  } catch {
+    request.state = 'error';
+  }
+  if (historyRequest === request) {
+    render(document.activeElement?.id === 'history-offer' ? '#history-offer' : '');
+  }
 }
 
 function notFound() {
@@ -102,6 +130,7 @@ function currentOffer() {
 window.addEventListener('hashchange', () => {
   if (dialog.open) dialog.close();
   historyOffer = '';
+  historyRequest = undefined;
   registration = false;
   render();
   window.scrollTo(0, 0);
@@ -147,15 +176,26 @@ document.addEventListener('change', ({ target }) => {
       reportFilters[target.id === 'report-value' ? 'value' : 'days'] = value;
       render(`#${target.id}`);
       break;
-    case 'admin-category':
-      document.querySelector('#admin-specs').innerHTML = adminSpecs(value);
+    case 'admin-category': {
+      const type = categories[value].type;
+      const fields = document.querySelector('#admin-specs');
+      if (fields.dataset.productType !== type) {
+        fields.innerHTML = adminSpecs(type);
+        fields.dataset.productType = type;
+      }
       break;
+    }
     case 'admin-product':
     case 'admin-store':
       currentOffer();
       break;
   }
 });
+
+document.addEventListener('invalid', ({ target }) => {
+  const details = target.closest('.spec-options');
+  if (details) details.open = true;
+}, true);
 
 document.addEventListener('click', (event) => {
   if (event.target.closest('.skip-link')) {
@@ -174,9 +214,23 @@ document.addEventListener('click', (event) => {
   if (!button) return;
   const data = button.dataset;
   try {
-    if ('category' in data) {
+    if ('retryCatalog' in data) {
+      awaitDatabaseCatalog();
+    } else if ('retryHistory' in data) {
+      historyRequest = undefined;
+      render('#history-offer');
+    } else if (data.addSpecRow) {
+      const list = button.closest('fieldset').querySelector('[data-spec-rows]');
+      list.insertAdjacentHTML('beforeend', adminSpecRow(data.addSpecRow));
+      list.lastElementChild.querySelector('input, select').focus();
+    } else if ('removeSpecRow' in data) {
+      const entry = button.closest('[data-spec-entry]');
+      const add = entry.closest('fieldset').querySelector('[data-add-spec-row]');
+      entry.remove();
+      add.focus();
+    } else if ('category' in data) {
       filters.category = data.category;
-      renderCatalog(`[data-category="${data.category}"]`);
+      renderCatalog(`[data-category="${CSS.escape(data.category)}"]`);
     } else if ('resetFilters' in data) {
       filters = initialFilters();
       const search = document.querySelector('#search');
@@ -286,13 +340,18 @@ function handleAdmin(form, entity) {
     const category = input.get('admin-category');
     const brand = requiredText(input.get('brand'));
     const model = requiredText(input.get('model'));
-    const values = categories[category].specs.map((_, i) => requiredText(input.get(`spec-${i}`)));
+    const details = readTechnicalSpecifications(input, categories[category].type);
+    const description = input.get('description').trim();
+    const source = input.get('source').trim();
+    if (source && !['https:', 'http:'].includes(new URL(source).protocol)) {
+      throw new Error('Üretici sayfası için http:// veya https:// ile başlayan bir adres gir.');
+    }
     const key = (name) => name.toLocaleLowerCase('tr-TR');
     commit((draft) => {
       if (draft.products.some((item) => key(item.brand) === key(brand) && key(item.model) === key(model) && item.category === category)) {
         throw new Error('Bu ürün katalogda zaten var.');
       }
-      draft.products.push({ id: crypto.randomUUID(), brand, model, category, values });
+      draft.products.push({ id: crypto.randomUUID(), brand, model, category, description, source, ...details });
     });
     render('[data-admin="product"] input');
     announce('Ürün eklendi.');
@@ -349,5 +408,18 @@ document.addEventListener('submit', async (event) => {
   }
 });
 
+async function awaitDatabaseCatalog() {
+  catalogState = 'loading';
+  render();
+  try {
+    await loadDatabaseCatalog();
+    catalogState = 'ready';
+  } catch {
+    catalogState = 'error';
+  }
+  render();
+}
+
 document.querySelector('#site-footer').innerHTML = footer();
-render();
+if (usesDatabaseCatalog) awaitDatabaseCatalog();
+else render();
