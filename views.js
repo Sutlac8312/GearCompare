@@ -1,5 +1,5 @@
 import { categories } from './catalog.js';
-import { catalog, activeUser, favorites, preferences, productOffers, bestPrice, getProduct, getStore, usesDatabaseCatalog, databasePricingAvailable, databaseAccountAlerts, databaseAccountNotifications } from './store.js';
+import { catalog, activeUser, favorites, preferences, productOffers, bestPrice, getProduct, getStore, usesDatabaseCatalog, databasePricingAvailable, databaseAccountAlerts, databaseAccountNotifications, databaseReportData, databaseOffer } from './store.js';
 import { comparisonSpecs, detailFields, pickupRows, speakerSummary, specificationGroups, technicalGroups } from './specifications.js';
 import { icon, html, money, dateLabel, title, productLink, productLinkText, options, select, table, empty, priceChart } from './ui.js';
 
@@ -346,6 +346,7 @@ export function alertContents(product) {
 }
 
 export function reportsPage(filters) {
+  if (usesDatabaseCatalog) return databaseReportsPage(filters);
   const choices = filters.group === 'store' ? storeChoices() : categoryChoices();
   const groupId = (offer) => filters.group === 'store' ? offer.store : getProduct(offer.product).category;
   const groupOffers = catalog.offers.filter((offer) => getProduct(offer.product) && (!filters.value || groupId(offer) === filters.value));
@@ -383,6 +384,53 @@ export function reportsPage(filters) {
     ${demoNote}
   </div>`;
 }
+
+
+function databaseReportsPage(filters) {
+  const report = databaseReportData();
+  if (!report.available) {
+    return '<div class="shell interior"><div class="page-heading"><h1>Raporlar</h1><p>Mağaza ve kategori raporları için fiyat veritabanı hazır olmalı.</p></div></div>';
+  }
+  if (!report.stores.length && !report.categories.length) {
+    return '<div class="shell interior"><p role="status">Rapor verileri yükleniyor…</p></div>';
+  }
+  const choices = filters.group === 'store'
+    ? report.stores.map(({ storeId, name }) => [String(storeId), name])
+    : report.categories.map(({ category, name }) => [category, name]);
+  const source = filters.group === 'store' ? report.stores : report.categories;
+  const selected = filters.value ? source.filter((item) => String(filters.group === 'store' ? item.storeId : item.category) === filters.value) : source;
+  const groups = selected.map((item) => [
+    html(item.name), item.productCount, item.offerCount,
+    priceCell(item.minimumPrice), priceCell(item.averagePrice),
+  ]);
+  const changes = report.summaries.map((summary) => {
+    const offer = databaseOffer(summary.offerId);
+    if (!offer || summary.beginningPrice == null || summary.endingPrice == null || summary.beginningPrice === summary.endingPrice) return null;
+    if (filters.value && (filters.group === 'store'
+      ? String(offer.store) !== filters.value
+      : getProduct(offer.product)?.category !== filters.value)) return null;
+    const percent = (summary.endingPrice - summary.beginningPrice) / summary.beginningPrice * 100;
+    const formatted = new Intl.NumberFormat('tr-TR', { style: 'percent', maximumFractionDigits: 1, signDisplay: 'always' }).format(percent / 100);
+    return { offer, prior: summary.beginningPrice, percent, formatted };
+  }).filter(Boolean).sort((a, b) => Math.abs(b.percent) - Math.abs(a.percent));
+  return `<div class="shell interior">
+    <div class="page-heading"><h1>Raporlar</h1><p>Mağaza veya kategori bazında teklifleri ve fiyat değişimlerini incele.</p></div>
+    <div class="report-filters">
+      ${select('report-group', 'Rapor grubu', [['store', 'Mağazaya göre'], ['category', 'Kategoriye göre']], filters.group)}
+      ${select('report-value', 'Rapor filtresi', [['', filters.group === 'store' ? 'Tüm mağazalar' : 'Tüm kategoriler'], ...choices], filters.value)}
+    </div>
+    <section class="panel"><h2>Güncel teklif özeti</h2>
+      ${table([filters.group === 'store' ? 'Mağaza' : 'Kategori', 'Ürün', 'Teklif', 'En düşük fiyat', 'Ortalama fiyat'], groups, 'Güncel teklif özeti')}
+    </section>
+    <section class="panel"><div class="section-heading"><h2>Fiyat değişimleri</h2>${select('report-days', 'Fiyat değişimi dönemi', [['7', 'Son 7 gün'], ['30', 'Son 30 gün'], ['', 'Tüm dönemler']], filters.days)}</div>
+      ${changes.length ? table(['Ürün', 'Mağaza', 'Önceki fiyat', 'Güncel fiyat', 'Değişim'], changes.map(({ offer, prior, percent, formatted }) => [
+        productLinkText(getProduct(offer.product)), html(getStore(offer.store).name), priceCell(prior), priceCell(offer.price),
+        `<span class="numeric ${percent < 0 ? 'decrease' : ''}">${formatted}</span>`,
+      ]), 'Fiyat değişimleri') : '<p>Seçilen dönem ve filtre için fiyat değişimi yok.</p>'}
+    </section>
+  </div>`;
+}
+
 
 function specInput(field, prefix = '') {
   const { key, label, unit, required, min, max, step } = field;
