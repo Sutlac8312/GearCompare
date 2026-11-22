@@ -3,7 +3,7 @@ package com.gearcompare.catalog;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
-
+import com.gearcompare.admin.OfferPriceChanged;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -35,6 +35,42 @@ public class NotificationQueries {
             Instant createdAt,
             Instant readAt) {
     }
+
+    public record AlertView(long alertId, String product, BigDecimal targetPrice, Instant createdAt, Instant updatedAt) {}
+
+    public record NotificationView(long notificationId, long alertId, String product, String store,
+            BigDecimal price, BigDecimal targetPrice, Instant createdAt, Instant readAt) {}
+
+    public List<AlertView> findAlerts(long userId) {
+        return jdbc.query("""
+                SELECT a.alert_id, p.slug, a.target_price, a.created_at, a.updated_at
+                FROM price_alert a JOIN product p ON p.product_id = a.product_id
+                WHERE a.user_id = ? AND a.disabled_at IS NULL
+                ORDER BY a.updated_at DESC
+                """, (row, index) -> new AlertView(row.getLong("alert_id"), row.getString("slug"),
+                row.getBigDecimal("target_price"), row.getTimestamp("created_at").toInstant(),
+                row.getTimestamp("updated_at").toInstant()), userId);
+    }
+
+    public List<NotificationView> findAllNotifications(long userId) {
+        return jdbc.query("""
+                SELECT n.notification_id, n.alert_id, p.slug, s.name, ph.price,
+                    n.target_at_event, n.created_at, n.read_at
+                FROM notification n
+                JOIN price_alert a ON a.alert_id = n.alert_id
+                JOIN product p ON p.product_id = a.product_id
+                JOIN price_history ph ON ph.offer_id = n.offer_id AND ph.recorded_at = n.price_recorded_at
+                JOIN offer o ON o.offer_id = n.offer_id
+                JOIN store s ON s.store_id = o.store_id
+                WHERE a.user_id = ?
+                ORDER BY n.created_at DESC
+                """, (row, index) -> new NotificationView(row.getLong("notification_id"),
+                row.getLong("alert_id"), row.getString("slug"), row.getString("name"),
+                row.getBigDecimal("price"), row.getBigDecimal("target_at_event"),
+                row.getTimestamp("created_at").toInstant(), row.getTimestamp("read_at") == null ? null
+                        : row.getTimestamp("read_at").toInstant()), userId);
+    }
+
 
     public List<PriceAlert> findEligibleAlerts(long productId, BigDecimal price) {
         return jdbc.query("""
@@ -101,8 +137,32 @@ public class NotificationQueries {
                     disabled_at
                 )
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+                ON DUPLICATE KEY UPDATE target_price = VALUES(target_price),
+                updated_at = CURRENT_TIMESTAMP, disabled_at = NULL
                 """, userId, productId, targetPrice);
     }
+
+    public int createPriceAlert(long userId, String productSlug, BigDecimal targetPrice) {
+        return createPriceAlert(userId, jdbc.queryForObject("SELECT product_id FROM product WHERE slug = ?",
+                Long.class, productSlug), targetPrice);
+    }
+
+    public void createNotifications(OfferPriceChanged event) {
+        jdbc.query("""
+                SELECT alert_id, target_price FROM price_alert
+                WHERE product_id = ? AND target_price >= ?
+                AND (? IS NULL OR ? > target_price) AND disabled_at IS NULL
+                """, (row, index) -> {
+                    jdbc.update("""
+                            INSERT IGNORE INTO notification
+                                (alert_id, offer_id, price_recorded_at, target_at_event)
+                            VALUES (?, ?, ?, ?)
+                            """, row.getLong("alert_id"), event.offerId(),
+                            java.sql.Timestamp.from(event.recordedAt()), row.getBigDecimal("target_price"));
+                    return null;
+                }, event.productId(), event.price(), event.previousPrice(), event.previousPrice());
+    }
+
 
     public int disablePriceAlert(long alertId, long userId) {
         return jdbc.update("""
