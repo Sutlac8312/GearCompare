@@ -41,6 +41,16 @@ public class NotificationController {
         return queries.findEligibleAlerts(productId, price);
     }
 
+    @GetMapping("/alerts")
+    public List<NotificationQueries.AlertView> alerts(HttpServletRequest request) {
+        return queries.findAlerts(accounts.requireUser(request));
+    }
+
+    @GetMapping
+    public List<NotificationQueries.NotificationView> allNotifications(HttpServletRequest request) {
+        return queries.findAllNotifications(accounts.requireUser(request));
+    }
+
     @GetMapping("/{alertId}")
     public List<NotificationQueries.Notification> notifications(@PathVariable long alertId, HttpServletRequest request) {
         return queries.findNotifications(alertId, accounts.requireUser(request));
@@ -56,7 +66,7 @@ public class NotificationController {
 
     @PostMapping("/alerts")
     public ResponseEntity<Void> createAlert(@RequestBody PriceAlertRequest input, HttpServletRequest request) {
-        queries.createPriceAlert(accounts.requireUser(request), input.productId(), input.targetPrice());
+        queries.createPriceAlert(accounts.requireUser(request), input.productSlug(), input.targetPrice());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
@@ -75,5 +85,5 @@ public class NotificationController {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
     }
 
-    public record PriceAlertRequest(long productId, BigDecimal targetPrice) {}
+    public record PriceAlertRequest(String productSlug, BigDecimal targetPrice) {}
 }
