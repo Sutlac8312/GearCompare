@@ -38,19 +38,24 @@ public class CatalogController {
         return ResponseEntity.of(queries.findBySlug(slug));
     }
 
+      @GetMapping("/favorites")
+    public List<String> favorites(HttpServletRequest request) {
+        return queries.findFavoriteSlugs(accounts.requireUser(request));
+    }
+
     @PostMapping("/{productId}/favorite")
     public ResponseEntity<Void> addFavorite(
-            @PathVariable long productId,
+            @PathVariable String productId,
             HttpServletRequest request) {
-        queries.addFavorite(accounts.requireUser(request), productId);
+        queries.addFavorite(accounts.requireUser(request), queries.productId(productId));
         return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{productId}/favorite")
     public ResponseEntity<Void> removeFavorite(
-            @PathVariable long productId,
+            @PathVariable String productId,
             HttpServletRequest request) {
-        queries.removeFavorite(accounts.requireUser(request), productId);
+        queries.removeFavorite(accounts.requireUser(request), queries.productId(productId));
         return ResponseEntity.noContent().build();
     }
 
