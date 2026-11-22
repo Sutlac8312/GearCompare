@@ -79,4 +79,36 @@ public class NotificationQueries {
                                 : row.getTimestamp("read_at").toInstant()),
                 alertId);
     }
+
+    public int markNotificationRead(long notificationId) {
+        return jdbc.update("""
+                UPDATE notification
+                SET read_at = CURRENT_TIMESTAMP
+                WHERE notification_id = ?
+                """, notificationId);
+    }
+
+    public int createPriceAlert(long userId, long productId, BigDecimal targetPrice) {
+        return jdbc.update("""
+                INSERT INTO price_alert (
+                    user_id,
+                    product_id,
+                    target_price,
+                    created_at,
+                    updated_at,
+                    disabled_at
+                )
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+                """, userId, productId, targetPrice);
+    }
+
+    public int disablePriceAlert(long alertId, long userId) {
+        return jdbc.update("""
+                UPDATE price_alert
+                SET disabled_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE alert_id = ?
+                AND user_id = ?
+                """, alertId, userId);
+    }
 }
