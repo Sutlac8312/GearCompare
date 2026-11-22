@@ -110,7 +110,7 @@ public class PricingQueries {
                 offerId, from, to);
     }
 
-    ublic List<PriceSummary> findPriceSummaries(Instant from, Instant to) {
+    public List<PriceSummary> findPriceSummaries(Instant from, Instant to) {
         return jdbc.query("""
                 WITH ranked_prices AS (
                     SELECT ph.offer_id, ph.recorded_at, ph.price,
