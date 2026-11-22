@@ -10,6 +10,7 @@ let databaseUser = null;
 let databaseAlerts = [];
 let databaseNotifications = [];
 export let databasePricingAvailable = false;
+let databaseReports = { stores: [], categories: [], summaries: [], days: '', available: false };
 
 function read(storage, key, fallback) {
   try {
@@ -88,8 +89,26 @@ export async function loadDatabaseCatalog() {
     databaseStores.set(store.id, store);
     return { id, product, store: store.id, price };
   });
+  if (databasePricingAvailable) {
+    await loadDatabaseReports('30').catch(() => {
+      databaseReports = { stores: [], categories: [], summaries: [], days: '30', available: false };
+    });
+  }
   const ids = new Set(products.map(({ id }) => id));
   preferences = { ...preferences, compare: preferences.compare.map((id) => ids.has(id) ? id : '') };
+}
+
+export const databaseReportData = () => databaseReports;
+
+export async function loadDatabaseReports(days = '30') {
+  const to = new Date().toISOString();
+  const from = days ? new Date(Date.now() - Number(days) * 86400000).toISOString() : '1970-01-01T00:00:00Z';
+  const [stores, categories, summaries] = await Promise.all([
+    requestApi('api/offers/stores/statistics'),
+    requestApi('api/offers/categories/statistics'),
+    requestApi(`api/offers/history/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+  ]);
+  databaseReports = { stores, categories, summaries, days, available: true };
 }
 
 export const loadPriceHistory = (offerId) => requestApi(`api/offers/${encodeURIComponent(offerId)}/history`);
@@ -134,6 +153,8 @@ export function productOffers(id) {
   const offers = usesDatabaseCatalog ? databaseOffers : catalog.offers;
   return offers.filter((offer) => offer.product === id).sort((a, b) => a.price - b.price);
 }
+
+export const databaseOffer = (id) => databaseOffers.find((offer) => String(offer.id) === String(id));
 
 export const bestPrice = (id) => productOffers(id)[0]?.price;
 export const parsePrice = (raw) => Math.round(Number(raw) * 100) / 100;
