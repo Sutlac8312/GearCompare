@@ -48,6 +48,40 @@ public class PricingQueries {
                 row.getTimestamp("price_updated_at").toInstant()), productId);
     }
 
+    public List<StoreStatistics> findStoreStatistics() {
+        return jdbc.query("""
+                SELECT s.store_id,
+                    s.name,
+                    COUNT(o.offer_id) AS offer_count,
+                    MIN(o.current_price) AS minimum_price,
+                    AVG(o.current_price) AS average_price
+                FROM store s
+                LEFT JOIN offer o ON s.store_id = o.store_id
+                GROUP BY s.store_id, s.name
+                """, (row, index) -> new StoreStatistics(
+                row.getLong("store_id"),
+                row.getString("name"),
+                row.getLong("offer_count"),
+                row.getBigDecimal("minimum_price"),
+                row.getBigDecimal("average_price")));
+    }
+
+    public List<CategoryStatistics> findCategoryStatistics() {
+        return jdbc.query("""
+                SELECT p.category_id,
+                    COUNT(o.offer_id) AS offer_count,
+                    MIN(o.current_price) AS minimum_price,
+                    AVG(o.current_price) AS average_price
+                FROM product p
+                LEFT JOIN offer o ON p.product_id = o.product_id
+                GROUP BY p.category_id
+                """, (row, index) -> new CategoryStatistics(
+                row.getLong("category_id"),
+                row.getLong("offer_count"),
+                row.getBigDecimal("minimum_price"),
+                row.getBigDecimal("average_price")));
+    }
+
     public List<PricePoint> findHistory(long offerId) {
         return jdbc.query("""
             SELECT recorded_at, price
@@ -76,6 +110,33 @@ public class PricingQueries {
                 offerId, from, to);
     }
 
+    ublic List<PriceSummary> findPriceSummaries(Instant from, Instant to) {
+        return jdbc.query("""
+                WITH ranked_prices AS (
+                    SELECT ph.offer_id, ph.recorded_at, ph.price,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY ph.offer_id
+                            ORDER BY ph.recorded_at ASC
+                        ) AS first_price,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY ph.offer_id
+                            ORDER BY ph.recorded_at DESC
+                        ) AS last_price
+                    FROM price_history ph
+                    WHERE ph.recorded_at >= ?
+                    AND ph.recorded_at < ?
+                )
+                SELECT offer_id,
+                    MAX(CASE WHEN first_price = 1 THEN price END) AS beginning_price,
+                    MAX(CASE WHEN last_price = 1 THEN price END) AS ending_price
+                FROM ranked_prices
+                GROUP BY offer_id
+                """, (row, index) -> new PriceSummary(
+                row.getLong("offer_id"),
+                row.getBigDecimal("beginning_price"),
+                row.getBigDecimal("ending_price")), from, to);
+    }
+
     public record Offer(String id, String product, Store store, BigDecimal price) {}
 
     public record Store(String id, String name, String website) {}
@@ -85,6 +146,27 @@ public class PricingQueries {
     public record ProductOffer(long offerId, String storeName, String website, BigDecimal currentPrice, Instant priceUpdatedAt) {}
 
     public record OfferForUpdate(long offerId, BigDecimal currentPrice) {}
+
+    public record StoreStatistics(
+            long storeId,
+            String name,
+            long offerCount,
+            BigDecimal minimumPrice,
+            BigDecimal averagePrice) {
+    }
+
+    public record CategoryStatistics(
+            long categoryId,
+            long offerCount,
+            BigDecimal minimumPrice,
+            BigDecimal averagePrice) {
+    }
+
+    public record PriceSummary(
+            long offerId,
+            BigDecimal beginningPrice,
+            BigDecimal endingPrice) {
+    }
 
     public OfferForUpdate findOfferForUpdate(long productId, long storeId) {
         return jdbc.query("""
