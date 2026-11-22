@@ -52,6 +52,23 @@ public class PricingController {
         return queries.findOffersByProduct(productId);
     }
 
+    @GetMapping("/stores/statistics")
+    public List<PricingQueries.StoreStatistics> storeStatistics() {
+        return queries.findStoreStatistics();
+    }
+
+    @GetMapping("/categories/statistics")
+    public List<PricingQueries.CategoryStatistics> categoryStatistics() {
+        return queries.findCategoryStatistics();
+    }
+
+    @GetMapping("/history/summary")
+    public List<PricingQueries.PriceSummary> priceSummaries(
+            @RequestParam Instant from,
+            @RequestParam Instant to) {
+        return queries.findPriceSummaries(from, to);
+    }
+
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<Void> pricingUnavailable() {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
