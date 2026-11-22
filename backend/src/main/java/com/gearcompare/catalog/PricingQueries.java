@@ -29,6 +29,25 @@ public class PricingQueries {
             ));
     }
 
+    public List<ProductOffer> findOffersByProduct(long productId) {
+        return jdbc.query("""
+                SELECT o.offer_id,
+                    s.name AS store_name,
+                    s.website,
+                    o.current_price,
+                    o.price_updated_at
+                FROM offer o
+                JOIN store s ON o.store_id = s.store_id
+                WHERE o.product_id = ?
+                ORDER BY o.current_price ASC
+                """, (row, index) -> new ProductOffer(
+                row.getLong("offer_id"),
+                row.getString("store_name"),
+                row.getString("website"),
+                row.getBigDecimal("current_price"),
+                row.getTimestamp("price_updated_at").toInstant()), productId);
+    }
+
     public List<PricePoint> findHistory(long offerId) {
         return jdbc.query("""
             SELECT recorded_at, price
@@ -45,9 +64,39 @@ public class PricingQueries {
             ), offerId);
     }
 
+    public List<PricePoint> findHistoryBetween(long offerId, Instant from, Instant to) {
+        return jdbc.query("""
+                SELECT recorded_at, price
+                FROM price_history
+                WHERE offer_id = ?
+                AND recorded_at BETWEEN ? AND ?
+                ORDER BY recorded_at ASC
+                """, (row, index) -> new PricePoint(
+                row.getTimestamp("recorded_at").toInstant(), row.getBigDecimal("price")),
+                offerId, from, to);
+    }
+
     public record Offer(String id, String product, Store store, BigDecimal price) {}
 
     public record Store(String id, String name, String website) {}
 
     public record PricePoint(Instant date, BigDecimal price) {}
+
+    public record ProductOffer(long offerId, String storeName, String website, BigDecimal currentPrice, Instant priceUpdatedAt) {}
+
+    public record OfferForUpdate(long offerId, BigDecimal currentPrice) {}
+
+    public OfferForUpdate findOfferForUpdate(long productId, long storeId) {
+        return jdbc.query("""
+                SELECT offer_id, current_price
+                FROM offer
+                WHERE product_id = ?
+                AND store_id = ?
+                FOR UPDATE
+                """,
+                (row, index) -> new OfferForUpdate(
+                        row.getLong("offer_id"),
+                        row.getBigDecimal("current_price")),
+                productId, storeId).stream().findFirst().orElse(null);
+    }
 }
