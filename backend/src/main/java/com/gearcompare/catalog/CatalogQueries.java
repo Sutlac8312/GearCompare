@@ -41,6 +41,21 @@ public class CatalogQueries {
         return readProducts(rows).stream().findFirst();
     }
 
+    public int addFavorite(long userId, long productId) {
+        return jdbc.update("""
+                INSERT INTO favorite (user_id, product_id, added_at)
+                VALUES (:userId, :productId, CURRENT_TIMESTAMP)
+                """, Map.of("userId", userId, "productId", productId));
+    }
+
+    public int removeFavorite(long userId, long productId) {
+        return jdbc.update("""
+                DELETE FROM favorite
+                WHERE user_id = :userId
+                AND product_id = :productId
+                """, Map.of("userId", userId, "productId", productId));
+    }
+
     private List<CatalogProduct> readProducts(List<Map<String, Object>> products) {
         var idsByType = new HashMap<String, List<Long>>();
         for (var product : products) {
