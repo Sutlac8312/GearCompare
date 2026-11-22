@@ -4,6 +4,7 @@ import {
   catalog, preferences, commit, updatePreferences, getProduct, productOffers,
   activeUser, parsePrice, saveOffer, notifyAlert, passwordDigest, usesDatabaseCatalog, loadDatabaseCatalog, loadPriceHistory,
   loadDatabaseUser, signInDatabase, signOutDatabase,
+  requestApi,
 } from './store.js';
 import { empty, money, productLink } from './ui.js';
 import {
@@ -343,8 +344,8 @@ function handleAlert(form, id) {
   announce('Fiyat alarmı kaydedildi.');
 }
 
-function handleAdmin(form, entity) {
-  if (!preferences.demoAdmin) throw new Error('Demo yönetimini aç.');
+async function handleAdmin(form, entity) {
+  if (!usesDatabaseCatalog && !preferences.demoAdmin) throw new Error('Demo yönetimini aç.');
   const input = new FormData(form);
   if (entity === 'product') {
     const category = input.get('admin-category');
@@ -355,6 +356,13 @@ function handleAdmin(form, entity) {
     const source = input.get('source').trim();
     if (source && !['https:', 'http:'].includes(new URL(source).protocol)) {
       throw new Error('Üretici sayfası için http:// veya https:// ile başlayan bir adres gir.');
+    }
+    if (usesDatabaseCatalog) {
+      await requestApi('api/admin/products', 'POST', { brand, model, category, description, source, ...details });
+      const message = await refreshDatabaseCatalog('Ürün eklendi.');
+      if (form.isConnected) render('[data-admin="product"] input');
+      announce(message);
+      return;
     }
     const key = (name) => name.toLocaleLowerCase('tr-TR');
     commit((draft) => {
@@ -370,6 +378,12 @@ function handleAdmin(form, entity) {
     const website = input.get('website').trim();
     if (website && !['https:', 'http:'].includes(new URL(website).protocol)) {
       throw new Error('http:// veya https:// ile başlayan bir adres gir.');
+    }
+    if (usesDatabaseCatalog) {
+      await requestApi('api/admin/stores', 'POST', { name, website });
+      if (form.isConnected) render('[data-admin="store"] input');
+      announce('Mağaza eklendi.');
+      return;
     }
     commit((draft) => {
       if (draft.stores.some((store) => store.name.toLocaleLowerCase('tr-TR') === name.toLocaleLowerCase('tr-TR'))) {
@@ -388,6 +402,15 @@ function handleAdmin(form, entity) {
     form.elements.price.value = '';
     currentOffer();
     announce(updated ? 'Teklif ve fiyat geçmişi güncellendi.' : 'Teklif eklendi.');
+  }
+}
+
+async function refreshDatabaseCatalog(message) {
+  try {
+    await loadDatabaseCatalog();
+    return message;
+  } catch {
+    return `${message} Kataloğu görmek için sayfayı yenile.`;
   }
 }
 
@@ -410,7 +433,7 @@ document.addEventListener('submit', async (event) => {
   try {
     if ('accountForm' in form.dataset) await handleAccount(form);
     else if (form.dataset.alertForm) handleAlert(form, form.dataset.alertForm);
-    else if (form.dataset.admin) handleAdmin(form, form.dataset.admin);
+    else if (form.dataset.admin) await handleAdmin(form, form.dataset.admin);
   } catch (error) {
     errorRegion.textContent = error.message || 'İşlem tamamlanamadı. Tekrar dene.';
   } finally {

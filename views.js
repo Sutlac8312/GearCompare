@@ -429,12 +429,9 @@ export function adminPage() {
     ${empty('user', 'Yönetici oturumu gerekli', 'Yönetim işlemleri için yönetici hesabıyla giriş yap.',
       '<a class="button button-primary" href="#hesabim/hesap">Hesabıma git</a>')}
   </div>`;
-  if (usesDatabaseCatalog) return `<div class="shell interior">
-    <div class="page-heading"><h1>Yönetici paneli</h1><p>Ürün kataloğunu ve fiyat kayıtlarını MySQL üzerinden yönet.</p></div>
-  </div>`;
   return `<div class="shell interior">
-    <div class="page-heading"><h1>Yönetici paneli</h1><p>Ürün, mağaza ve teklifleri yerel demo verisinde yönet.</p></div>
-    ${preferences.demoAdmin ? `<div class="admin-grid">
+    <div class="page-heading"><h1>Yönetici paneli</h1><p>${usesDatabaseCatalog ? 'Ürün kataloğunu ve mağazaları yönet.' : 'Ürün, mağaza ve teklifleri yerel demo verisinde yönet.'}</p></div>
+    ${usesDatabaseCatalog || preferences.demoAdmin ? `<div class="admin-grid">
       <section class="panel"><h2>Ürün ekle</h2><form class="form" data-admin="product">
         <label>Marka<input name="brand" required maxlength="50"></label>
         <label>Model<input name="model" required maxlength="80"></label>
@@ -455,16 +452,16 @@ export function adminPage() {
         <p class="form-error" role="alert"></p>
         <button class="button button-primary" type="submit">Mağaza ekle</button>
       </form></section>
-      <section class="panel"><h2>Teklif ekle veya güncelle</h2><form class="form" data-admin="offer">
+      ${usesDatabaseCatalog ? '' : `<section class="panel"><h2>Teklif ekle veya güncelle</h2><form class="form" data-admin="offer">
         <label>Ürün${select('admin-product', 'Teklif ürünü', [['', 'Ürün seç'], ...productChoices()], '', true)}</label>
         <label>Mağaza${select('admin-store', 'Teklif mağazası', [['', 'Mağaza seç'], ...storeChoices()], '', true)}</label>
         <label>Fiyat (₺)<input name="price" type="number" min="0.01" max="10000000" step="0.01" required></label>
         <p id="offer-current" class="hint"></p>
         <p class="form-error" role="alert"></p>
         <button class="button button-primary" type="submit">Teklifi kaydet</button>
-      </form></section>
+      </form></section>`}
       </div>
-      </div><button class="button button-outline admin-exit" type="button" data-admin-mode>Demo yönetiminden çık</button>`
+      </div>${usesDatabaseCatalog ? '' : '<button class="button button-outline admin-exit" type="button" data-admin-mode>Demo yönetiminden çık</button>'}`
       : `<section class="panel compact"><h2>Demo yönetimi</h2><p>Eklediğin kayıtlar ve fiyat güncellemeleri bu tarayıcıya kaydedilir.</p><button class="button button-primary" type="button" data-admin-mode>Demo yönetimini aç</button></section>`}
   </div>`;
 }
