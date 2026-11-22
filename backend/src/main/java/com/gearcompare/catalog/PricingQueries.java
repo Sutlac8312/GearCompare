@@ -52,6 +52,7 @@ public class PricingQueries {
         return jdbc.query("""
                 SELECT s.store_id,
                     s.name,
+                    COUNT(DISTINCT o.product_id) AS product_count,
                     COUNT(o.offer_id) AS offer_count,
                     MIN(o.current_price) AS minimum_price,
                     AVG(o.current_price) AS average_price
@@ -61,6 +62,7 @@ public class PricingQueries {
                 """, (row, index) -> new StoreStatistics(
                 row.getLong("store_id"),
                 row.getString("name"),
+                row.getLong("product_count"),
                 row.getLong("offer_count"),
                 row.getBigDecimal("minimum_price"),
                 row.getBigDecimal("average_price")));
@@ -68,15 +70,20 @@ public class PricingQueries {
 
     public List<CategoryStatistics> findCategoryStatistics() {
         return jdbc.query("""
-                SELECT p.category_id,
+                SELECT p.category_id, c.code, c.name,
+                    COUNT(DISTINCT p.product_id) AS product_count,
                     COUNT(o.offer_id) AS offer_count,
                     MIN(o.current_price) AS minimum_price,
                     AVG(o.current_price) AS average_price
                 FROM product p
+                JOIN category c ON c.category_id = p.category_id AND c.product_type = p.product_type
                 LEFT JOIN offer o ON p.product_id = o.product_id
-                GROUP BY p.category_id
+                GROUP BY p.category_id, c.code, c.name
                 """, (row, index) -> new CategoryStatistics(
                 row.getLong("category_id"),
+                row.getString("code"),
+                row.getString("name"),
+                row.getLong("product_count"),
                 row.getLong("offer_count"),
                 row.getBigDecimal("minimum_price"),
                 row.getBigDecimal("average_price")));
@@ -150,6 +157,7 @@ public class PricingQueries {
     public record StoreStatistics(
             long storeId,
             String name,
+            long productCount,
             long offerCount,
             BigDecimal minimumPrice,
             BigDecimal averagePrice) {
@@ -157,6 +165,9 @@ public class PricingQueries {
 
     public record CategoryStatistics(
             long categoryId,
+            String category,
+            String name,
+            long productCount,
             long offerCount,
             BigDecimal minimumPrice,
             BigDecimal averagePrice) {
