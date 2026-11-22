@@ -4,7 +4,7 @@ import {
   catalog, preferences, commit, updatePreferences, getProduct, productOffers,
   activeUser, favorites, parsePrice, saveOffer, notifyAlert, passwordDigest, usesDatabaseCatalog, loadDatabaseCatalog, loadPriceHistory,
   loadDatabaseUser, signInDatabase, signOutDatabase,
-  requestApi, setFavorite, saveDatabaseAlert, removeDatabaseAlert,
+  requestApi, setFavorite, saveDatabaseAlert, removeDatabaseAlert, loadDatabaseReports,
 } from './store.js';
 import { empty, money, productLink } from './ui.js';
 import {
@@ -176,8 +176,10 @@ document.addEventListener('change', ({ target }) => {
       break;
     case 'report-value':
     case 'report-days':
-      reportFilters[target.id === 'report-value' ? 'value' : 'days'] = value;
-      render(`#${target.id}`);
+      reportFilters.days = value;
+      if (usesDatabaseCatalog) {
+        loadDatabaseReports(value).then(() => render('#report-days')).catch((error) => announce(error.message));
+      } else render(`#${target.id}`);
       break;
     case 'admin-category': {
       const type = categories[value].type;
