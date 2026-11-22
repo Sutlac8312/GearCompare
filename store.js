@@ -7,6 +7,8 @@ let serverProducts = null;
 let databaseOffers = [];
 const databaseStores = new Map();
 let databaseUser = null;
+let databaseAlerts = [];
+let databaseNotifications = [];
 export let databasePricingAvailable = false;
 
 function read(storage, key, fallback) {
@@ -37,15 +39,30 @@ export async function requestApi(path, method = 'GET', data) {
 
 export async function loadDatabaseUser() {
   databaseUser = await requestApi('api/account/session');
+  await loadDatabaseAccountData();
+}
+
+export async function loadDatabaseAccountData() {
+  if (!databaseUser) {
+    databaseFavorites = [];
+    databaseAlerts = [];
+    databaseNotifications = [];
+    return;
+  }
+  [databaseFavorites, databaseAlerts, databaseNotifications] = await Promise.all([
+    requestApi('api/products/favorites'), requestApi('api/notifications/alerts'), requestApi('api/notifications'),
+  ]);
 }
 
 export async function signInDatabase(email, password, register) {
   databaseUser = await requestApi(`api/account/${register ? 'register' : 'login'}`, 'POST', { email, password });
+  await loadDatabaseAccountData();
 }
 
 export async function signOutDatabase() {
   await requestApi('api/account/session', 'DELETE');
   databaseUser = null;
+  await loadDatabaseAccountData();
 }
 
 export async function loadDatabaseCatalog() {
@@ -94,7 +111,24 @@ export function updatePreferences(change) {
 export const getProduct = (id) => catalog.products.find((product) => product.id === id);
 export const getStore = (id) => databaseStores.get(id) ?? catalog.stores.find((store) => store.id === id);
 export const activeUser = () => usesDatabaseCatalog ? databaseUser : catalog.users.find((user) => user.id === preferences.userId);
-export const favorites = () => activeUser()?.favorites ?? catalog.guestFavorites;
+export const favorites = () => usesDatabaseCatalog ? databaseFavorites : (activeUser()?.favorites ?? catalog.guestFavorites);
+export const databaseAccountAlerts = () => databaseAlerts;
+export const databaseAccountNotifications = () => databaseNotifications;
+
+export async function setFavorite(slug, saved) {
+  await requestApi(`api/products/${encodeURIComponent(slug)}/favorite`, saved ? 'POST' : 'DELETE');
+  databaseFavorites = saved ? [...databaseFavorites, slug] : databaseFavorites.filter((id) => id !== slug);
+}
+
+export async function saveDatabaseAlert(slug, targetPrice) {
+  await requestApi('api/notifications/alerts', 'POST', { productSlug: slug, targetPrice });
+  await loadDatabaseAccountData();
+}
+
+export async function removeDatabaseAlert(alertId) {
+  await requestApi(`api/notifications/alerts/${alertId}/disable`, 'PATCH');
+  databaseAlerts = databaseAlerts.filter(({ alertId: id }) => id !== alertId);
+}
 
 export function productOffers(id) {
   const offers = usesDatabaseCatalog ? databaseOffers : catalog.offers;
