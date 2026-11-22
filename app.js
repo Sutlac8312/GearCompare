@@ -2,9 +2,9 @@ import { categories } from './catalog.js';
 import { readTechnicalSpecifications } from './specifications.js';
 import {
   catalog, preferences, commit, updatePreferences, getProduct, productOffers,
-  activeUser, parsePrice, saveOffer, notifyAlert, passwordDigest, usesDatabaseCatalog, loadDatabaseCatalog, loadPriceHistory,
+  activeUser, favorites, parsePrice, saveOffer, notifyAlert, passwordDigest, usesDatabaseCatalog, loadDatabaseCatalog, loadPriceHistory,
   loadDatabaseUser, signInDatabase, signOutDatabase,
-  requestApi,
+  requestApi, setFavorite, saveDatabaseAlert, removeDatabaseAlert,
 } from './store.js';
 import { empty, money, productLink } from './ui.js';
 import {
@@ -241,6 +241,13 @@ document.addEventListener('click', async (event) => {
       renderCatalog('[data-category=""]');
     } else if (data.favorite) {
       const user = activeUser();
+      if (usesDatabaseCatalog) {
+        const saved = !favorites().includes(data.favorite);
+        await setFavorite(data.favorite, saved);
+        updateView(`[data-favorite="${CSS.escape(data.favorite)}"]`);
+        announce(saved ? 'Favorilere eklendi.' : 'Favorilerden çıkarıldı.');
+        return;
+      }
       const saved = commit((draft) => {
         const list = draft.users.find(({ id }) => id === user?.id)?.favorites ?? draft.guestFavorites;
         const index = list.indexOf(data.favorite);
@@ -279,6 +286,12 @@ document.addEventListener('click', async (event) => {
     } else if (data.removeAlert) {
       const user = activeUser();
       if (!user) return;
+      if (usesDatabaseCatalog) {
+        await removeDatabaseAlert(data.removeAlert);
+        render('.tabs [aria-current]');
+        announce('Fiyat alarmı silindi.');
+        return;
+      }
       commit((draft) => {
         draft.alerts = draft.alerts.filter(({ id, user: owner }) => id !== data.removeAlert || owner !== user.id);
       });
@@ -330,11 +343,17 @@ async function handleAccount(form) {
   announce(registration ? 'Demo hesabı oluşturuldu.' : 'Giriş yapıldı.');
 }
 
-function handleAlert(form, id) {
+async function handleAlert(form, id) {
   const user = activeUser();
   if (!user) throw new Error('Fiyat alarmı kurmak için giriş yap.');
   const target = parsePrice(new FormData(form).get('target'));
   if (!(target > 0 && target <= 10000000)) throw new Error('Geçerli bir hedef fiyat gir.');
+  if (usesDatabaseCatalog) {
+    await saveDatabaseAlert(id, target);
+    dialog.close();
+    announce('Fiyat alarmı kaydedildi.');
+    return;
+  }
   commit((draft) => {
     const current = draft.alerts.find((item) => item.user === user.id && item.product === id);
     if (current?.target === target) return;
@@ -457,7 +476,7 @@ document.addEventListener('submit', async (event) => {
   submit.disabled = true;
   try {
     if ('accountForm' in form.dataset) await handleAccount(form);
-    else if (form.dataset.alertForm) handleAlert(form, form.dataset.alertForm);
+    else if (form.dataset.alertForm) await handleAlert(form, form.dataset.alertForm);
     else if (form.dataset.admin) await handleAdmin(form, form.dataset.admin);
   } catch (error) {
     errorRegion.textContent = error.message || 'İşlem tamamlanamadı. Tekrar dene.';
