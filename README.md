@@ -18,7 +18,7 @@ Mağazalar, fiyatlar ve fiyat geçmişi örnek veridir. Ürün fotoğrafları te
 
 ## MySQL kataloğu
 
-1. DBeaver’da `gearcompare_v2` üzerinde [katalog şemasını](output/sql/gearcompare_catalog_mysql.sql) uygula. İlk deneme için [örnek gitarı](output/sql/gearcompare_catalog_seed_mysql.sql) ekleyebilirsin.
+1. DBeaver’da `gearcompare_v2` boşsa [katalog şemasını](output/sql/gearcompare_catalog_mysql.sql) çalıştır. Sekiz katalog tablosu zaten hazırsa bu adımı geç. Ardından [fiyat ve hesap tabloları migration’ını](output/sql/gearcompare_pricing_accounts_mysql.sql) çalıştır. İlk deneme için [örnek gitarı](output/sql/gearcompare_catalog_seed_mysql.sql) ekleyebilirsin.
 2. Java 17 veya üzeri ve Maven bulunan bir terminalde bağlantı bilgilerini ayarla. Varsayılan MySQL adresi `127.0.0.1:3306/gearcompare_v2`. DBeaver bağlantın farklı bir sunucu veya port kullanıyorsa `DB_URL` değişkenini `jdbc:mysql://SUNUCU:PORT/gearcompare_v2` biçiminde ayarla.
 
 ```zsh
