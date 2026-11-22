@@ -6,6 +6,7 @@ export const usesDatabaseCatalog = document.querySelector('meta[name="gearcompar
 let serverProducts = null;
 let databaseOffers = [];
 const databaseStores = new Map();
+let databaseUser = null;
 export let databasePricingAvailable = false;
 
 function read(storage, key, fallback) {
@@ -19,16 +20,38 @@ function read(storage, key, fallback) {
 export let catalog = expandSeedSpecifications(read(localStorage, catalogKey, initialCatalog));
 export let preferences = read(sessionStorage, preferenceKey, () => ({ userId: '', demoAdmin: false, compare: [] }));
 
-async function readApi(path) {
-  const response = await fetch(path, { cache: 'no-store', headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error(`API: HTTP ${response.status}`);
-  return response.json();
+export async function requestApi(path, method = 'GET', data) {
+  const headers = { Accept: 'application/json' };
+  if (data !== undefined) headers['Content-Type'] = 'application/json';
+  const response = await fetch(path, { method, cache: 'no-store', headers, body: JSON.stringify(data) });
+  if (!response.ok) {
+    const messages = {
+      400: 'Girdiğin bilgileri kontrol et.', 401: 'Giriş bilgilerini veya oturumunu kontrol et.',
+      403: 'Bu işlem için yetkin yok.', 409: 'Bu kayıt zaten var.',
+      503: 'Veritabanına şu anda ulaşılamıyor.',
+    };
+    throw new Error(messages[response.status] ?? 'İşlem tamamlanamadı. Tekrar dene.');
+  }
+  return response.status === 204 ? null : response.json();
+}
+
+export async function loadDatabaseUser() {
+  databaseUser = await requestApi('api/account/session');
+}
+
+export async function signInDatabase(email, password, register) {
+  databaseUser = await requestApi(`api/account/${register ? 'register' : 'login'}`, 'POST', { email, password });
+}
+
+export async function signOutDatabase() {
+  await requestApi('api/account/session', 'DELETE');
+  databaseUser = null;
 }
 
 export async function loadDatabaseCatalog() {
   const [products, pricing] = await Promise.all([
-    readApi('api/products'),
-    readApi('api/offers').catch(() => ({ available: false, offers: [] })),
+    requestApi('api/products'),
+    requestApi('api/offers').catch(() => ({ available: false, offers: [] })),
   ]);
   for (const { category, categoryName, productType } of products) {
     Object.defineProperty(categories, category, {
@@ -52,7 +75,7 @@ export async function loadDatabaseCatalog() {
   preferences = { ...preferences, compare: preferences.compare.map((id) => ids.has(id) ? id : '') };
 }
 
-export const loadPriceHistory = (offerId) => readApi(`api/offers/${encodeURIComponent(offerId)}/history`);
+export const loadPriceHistory = (offerId) => requestApi(`api/offers/${encodeURIComponent(offerId)}/history`);
 
 export function commit(change) {
   const saved = expandSeedSpecifications(read(localStorage, catalogKey, initialCatalog));
@@ -70,7 +93,7 @@ export function updatePreferences(change) {
 
 export const getProduct = (id) => catalog.products.find((product) => product.id === id);
 export const getStore = (id) => databaseStores.get(id) ?? catalog.stores.find((store) => store.id === id);
-export const activeUser = () => catalog.users.find((user) => user.id === preferences.userId);
+export const activeUser = () => usesDatabaseCatalog ? databaseUser : catalog.users.find((user) => user.id === preferences.userId);
 export const favorites = () => activeUser()?.favorites ?? catalog.guestFavorites;
 
 export function productOffers(id) {

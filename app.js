@@ -3,6 +3,7 @@ import { readTechnicalSpecifications } from './specifications.js';
 import {
   catalog, preferences, commit, updatePreferences, getProduct, productOffers,
   activeUser, parsePrice, saveOffer, notifyAlert, passwordDigest, usesDatabaseCatalog, loadDatabaseCatalog, loadPriceHistory,
+  loadDatabaseUser, signInDatabase, signOutDatabase,
 } from './store.js';
 import { empty, money, productLink } from './ui.js';
 import {
@@ -197,7 +198,7 @@ document.addEventListener('invalid', ({ target }) => {
   if (details) details.open = true;
 }, true);
 
-document.addEventListener('click', (event) => {
+document.addEventListener('click', async (event) => {
   if (event.target.closest('.skip-link')) {
     event.preventDefault();
     main.focus();
@@ -264,7 +265,9 @@ document.addEventListener('click', (event) => {
       registration = !registration;
       render('[data-account-form] input');
     } else if ('signOut' in data) {
-      updatePreferences({ userId: '' });
+      if (usesDatabaseCatalog) await signOutDatabase();
+      else updatePreferences({ userId: '' });
+      registration = false;
       render('[data-account-form] input');
       announce('Oturum kapatıldı.');
     } else if (data.removeAlert) {
@@ -293,6 +296,13 @@ async function handleAccount(form) {
   const input = new FormData(form);
   const email = input.get('email').trim().toLowerCase();
   const password = input.get('password');
+  if (usesDatabaseCatalog) {
+    await signInDatabase(email, password, registration);
+    announce(registration ? 'Hesap oluşturuldu.' : 'Giriş yapıldı.');
+    registration = false;
+    render('[data-sign-out]');
+    return;
+  }
   let user = catalog.users.find((item) => item.email === email);
   if (registration) {
     if (user) throw new Error('Bu e-posta ile bir demo hesabı var. Giriş yapabilirsin.');
@@ -412,7 +422,7 @@ async function awaitDatabaseCatalog() {
   catalogState = 'loading';
   render();
   try {
-    await loadDatabaseCatalog();
+    await Promise.all([loadDatabaseCatalog(), loadDatabaseUser().catch(() => {})]);
     catalogState = 'ready';
   } catch {
     catalogState = 'error';

@@ -297,10 +297,12 @@ export function accountPage(tab, registration) {
     const products = favorites().map(getProduct).filter(Boolean);
     body = products.length ? grid(products) : empty('heart', 'Henüz favorin yok', 'Üründeki kalbe dokunarak favorilerine ekle.', catalogLink);
   } else if (tabId === 'hesap') {
-    body = user ? `<section class="panel compact"><h2>Oturum</h2><p>${html(user.email)}</p><button class="button button-outline" type="button" data-sign-out>Çıkış yap</button></section>`
+    body = user ? `<section class="panel compact"><h2>Oturum</h2><p>${html(user.email)}</p>
+      ${user.role === 'ADMIN' ? '<a class="button button-primary" href="#yonetim">Yönetici paneli</a> ' : ''}
+      <button class="button button-outline" type="button" data-sign-out>Çıkış yap</button></section>`
       : `<section class="panel compact">
       <h2>${registration ? 'Kayıt ol' : 'Giriş yap'}</h2>
-      <p>Demo hesap bu tarayıcıda saklanır. Örnek bir e-posta ve parola kullan.</p>
+      ${usesDatabaseCatalog ? '' : '<p>Demo hesap bu tarayıcıda saklanır. Örnek bir e-posta ve parola kullan.</p>'}
       <form class="form" data-account-form>
         <label>E-posta<input type="email" name="email" maxlength="120" autocomplete="email" required></label>
         <label>Parola<input type="password" name="password" minlength="8" maxlength="128" autocomplete="${registration ? 'new-password' : 'current-password'}" required></label>
@@ -422,6 +424,11 @@ export function adminSpecs(type) {
 }
 
 export function adminPage() {
+  if (usesDatabaseCatalog && activeUser()?.role !== 'ADMIN') return `<div class="shell interior">
+    <div class="page-heading"><h1>Yönetici paneli</h1></div>
+    ${empty('user', 'Yönetici oturumu gerekli', 'Yönetim işlemleri için yönetici hesabıyla giriş yap.',
+      '<a class="button button-primary" href="#hesabim/hesap">Hesabıma git</a>')}
+  </div>`;
   if (usesDatabaseCatalog) return `<div class="shell interior">
     <div class="page-heading"><h1>Yönetici paneli</h1><p>Ürün kataloğunu ve fiyat kayıtlarını MySQL üzerinden yönet.</p></div>
   </div>`;

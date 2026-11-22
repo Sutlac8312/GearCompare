@@ -30,6 +30,16 @@ mvn -f backend/pom.xml spring-boot:run
 
 [Siteyi aç](http://127.0.0.1:8080). Katalog ve teknik karşılaştırma, MySQL’deki ürünleri kullanır. API’de [ürün listesi](http://127.0.0.1:8080/api/products) ve [örnek ürün detayı](http://127.0.0.1:8080/api/products/fender-player-ii) üzerinden veriyi kontrol edebilirsin.
 
+### Yerel yönetici hesabı
+
+Önce sitedeki **Hesabım → Kayıt ol** menüsünden hesap oluştur. İlk yöneticiye yetki vermek için DBeaver’da aşağıdaki sorguyu kendi kayıt e-postanla çalıştır.
+
+```sql
+UPDATE gearcompare_v2.app_user SET role = 'ADMIN' WHERE email = 'kendi-adresin@example.com';
+```
+
+Siteyi yenileyip **Yönetici paneli** bağlantısını aç. Yeni kayıtlar varsayılan olarak `USER` rolüyle oluşturulur. Favori, alarm ve bildirim API’lerinde kullanıcı kimliği sunucu oturumundan alınır.
+
 ### Mağaza fiyatları ve fiyat grafiği
 
 Mağaza fiyatları ve grafik, aynı MySQL veritabanındaki şu tablo ve sütunları okur. Tablo adlarını MySQL şemasında küçük harfle kullan.

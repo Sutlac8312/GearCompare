@@ -58,14 +58,15 @@ public class NotificationQueries {
                 productId, price);
     }
 
-    public List<Notification> findNotifications(long alertId) {
+    public List<Notification> findNotifications(long alertId, long userId) {
         return jdbc.query("""
-                SELECT notification_id, alert_id, offer_id,
-                    price_recorded_at, target_at_event,
-                    created_at, read_at
-                FROM notification
-                WHERE alert_id = ?
-                ORDER BY created_at DESC
+                SELECT n.notification_id, n.alert_id, n.offer_id,
+                    n.price_recorded_at, n.target_at_event,
+                    n.created_at, n.read_at
+                FROM notification n
+                JOIN price_alert a ON a.alert_id = n.alert_id
+                WHERE n.alert_id = ? AND a.user_id = ?
+                ORDER BY n.created_at DESC
                 """,
                 (row, index) -> new Notification(
                         row.getLong("notification_id"),
@@ -77,15 +78,16 @@ public class NotificationQueries {
                         row.getTimestamp("read_at") == null
                                 ? null
                                 : row.getTimestamp("read_at").toInstant()),
-                alertId);
+                alertId, userId);
     }
 
-    public int markNotificationRead(long notificationId) {
+    public int markNotificationRead(long notificationId, long userId) {
         return jdbc.update("""
-                UPDATE notification
-                SET read_at = CURRENT_TIMESTAMP
-                WHERE notification_id = ?
-                """, notificationId);
+                UPDATE notification n
+                JOIN price_alert a ON a.alert_id = n.alert_id
+                SET n.read_at = COALESCE(n.read_at, CURRENT_TIMESTAMP)
+                WHERE n.notification_id = ? AND a.user_id = ?
+                """, notificationId, userId);
     }
 
     public int createPriceAlert(long userId, long productId, BigDecimal targetPrice) {
