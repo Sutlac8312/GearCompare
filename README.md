@@ -43,3 +43,7 @@ Mağaza fiyatları ve grafik, aynı MySQL veritabanındaki şu tablo ve sütunla
 `offer.product_id`, `product.product_id` alanına bağlanır. Her ürün ve mağaza eşleşmesinin tek bir teklifi olur. `price_history` için `(offer_id, recorded_at)` birleşik anahtarı ve `recorded_at` için MySQL `TIMESTAMP` kullanılır. En güncel en fazla 90 fiyat kaydı, seçilen mağazanın grafiğinde gösterilir.
 
 Güncel mağaza fiyatları `GET /api/offers`, fiyat geçmişi `GET /api/offers/{offerId}/history` üzerinden gelir. Yalnızca katalog tabloları kuruluysa ürünler ve teknik karşılaştırma çalışır. Fiyatların görünmesi için teklif kayıtları, grafiğin görünmesi için de seçilen teklifin geçmiş kayıtları gerekir.
+
+### 250 bin örnek fiyat kaydı
+
+Katalog şeması ve migration uygulandıktan sonra DBeaver’da [sentetik fiyat seed’ini](output/sql/gearcompare_price_history_seed_mysql.sql) SQL script olarak çalıştır. Sonuç satırında sırasıyla 100 ürün, 5 mağaza, 500 teklif ve 250.000 fiyat kaydı görünür. Mevcut kayıtlar korunur. Seed tekrar çalıştırıldığında aynı test kayıtlarını çoğaltmaz.
