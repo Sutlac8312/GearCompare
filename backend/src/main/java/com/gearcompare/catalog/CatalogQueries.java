@@ -56,6 +56,21 @@ public class CatalogQueries {
                 """, Map.of("userId", userId, "productId", productId));
     }
 
+    public List<String> findFavoriteSlugs(long userId) {
+        return jdbc.queryForList("""
+                SELECT p.slug
+                FROM favorite f
+                JOIN product p ON p.product_id = f.product_id
+                WHERE f.user_id = :userId
+                ORDER BY f.added_at DESC
+                """, Map.of("userId", userId), String.class);
+    }
+
+    public long productId(String slug) {
+        return jdbc.queryForObject("SELECT product_id FROM product WHERE slug = :slug",
+                Map.of("slug", slug), Long.class);
+    }
+
     private List<CatalogProduct> readProducts(List<Map<String, Object>> products) {
         var idsByType = new HashMap<String, List<Long>>();
         for (var product : products) {
