@@ -1,5 +1,5 @@
 import { categories } from './catalog.js';
-import { catalog, activeUser, favorites, preferences, productOffers, bestPrice, getProduct, getStore, usesDatabaseCatalog, databasePricingAvailable } from './store.js';
+import { catalog, activeUser, favorites, preferences, productOffers, bestPrice, getProduct, getStore, usesDatabaseCatalog, databasePricingAvailable, databaseAccountAlerts, databaseAccountNotifications } from './store.js';
 import { comparisonSpecs, detailFields, pickupRows, speakerSummary, specificationGroups, technicalGroups } from './specifications.js';
 import { icon, html, money, dateLabel, title, productLink, productLinkText, options, select, table, empty, priceChart } from './ui.js';
 
@@ -314,15 +314,15 @@ export function accountPage(tab, registration) {
   } else if (!user) {
     body = empty('user', 'Giriş yap', 'Fiyat alarmlarını ve bildirimlerini görmek için giriş yap.', '<a class="button button-primary" href="#hesabim/hesap">Giriş yap</a>');
   } else if (tabId === 'alarmlar') {
-    const alerts = catalog.alerts.filter((item) => item.user === user.id && getProduct(item.product));
+    const alerts = usesDatabaseCatalog ? databaseAccountAlerts() : catalog.alerts.filter((item) => item.user === user.id && getProduct(item.product));
     body = alerts.length ? `<section class="panel"><h2>Fiyat alarmlarım</h2>${table(['Ürün', 'Hedef fiyat', 'İşlem'], alerts.map((alert) => [
-      productLinkText(getProduct(alert.product)), priceCell(alert.target),
-      `<button type="button" class="button button-outline" data-remove-alert="${html(alert.id)}">Alarmı sil</button>`,
+      productLinkText(getProduct(alert.product)), priceCell(alert.target ?? alert.targetPrice),
+      `<button type="button" class="button button-outline" data-remove-alert="${html(alert.id ?? alert.alertId)}">Alarmı sil</button>`,
     ]), 'Fiyat alarmları')}</section>` : empty('bell', 'Henüz fiyat alarmın yok', 'Ürün detayında hedef fiyat belirle. Bir teklif hedefe ulaştığında burada bildirim görürsün.', catalogLink);
   } else {
-    const notifications = catalog.notifications.filter((item) => item.user === user.id && getProduct(item.product));
+    const notifications = usesDatabaseCatalog ? databaseAccountNotifications() : catalog.notifications.filter((item) => item.user === user.id && getProduct(item.product));
     body = notifications.length ? `<section class="panel"><h2>Fiyat bildirimlerim</h2>${table(['Ürün', 'Mağaza', 'Fiyat', 'Tarih'], notifications.map((item) => [
-      productLinkText(getProduct(item.product)), html(getStore(item.store).name), priceCell(item.price), dateLabel(item.date),
+      productLinkText(getProduct(item.product)), html(item.store?.name ?? item.store), priceCell(item.price), dateLabel(item.date ?? item.createdAt),
     ]), 'Fiyat bildirimleri')}</section>` : empty('bell', 'Henüz bildirim yok', 'Bir mağaza teklifinde hedef fiyatına ulaşıldığında burada görünecek.');
   }
 
@@ -334,11 +334,11 @@ export function accountPage(tab, registration) {
 
 export function alertContents(product) {
   const user = activeUser();
-  const current = catalog.alerts.find((item) => item.user === user?.id && item.product === product.id);
+  const current = usesDatabaseCatalog ? databaseAccountAlerts().find((item) => item.product === product.id) : catalog.alerts.find((item) => item.user === user?.id && item.product === product.id);
   return `<div class="dialog-heading"><h2 id="alert-title">Fiyat alarmı kur</h2><button type="button" class="icon-button" aria-label="Kapat" data-close-dialog>${icon('close')}</button></div>
     <p>${html(title(product))}</p>
     ${user ? `<form class="form" data-alert-form="${html(product.id)}">
-      <label>Hedef fiyat (₺)<input type="number" name="target" value="${current?.target ?? ''}" min="0.01" max="10000000" step="0.01" required></label>
+      <label>Hedef fiyat (₺)<input type="number" name="target" value="${current?.target ?? current?.targetPrice ?? ''}" min="0.01" max="10000000" step="0.01" required></label>
       <p class="hint">Bir mağaza teklifi bu fiyata veya altına indiğinde bildirim alırsın.</p>
       <p class="form-error" role="alert"></p>
       <button class="button button-primary" type="submit">Alarmı kaydet</button>
