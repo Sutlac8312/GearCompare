@@ -201,6 +201,147 @@ CREATE TABLE pedal (
     )
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_as_cs;
 
+
+-- ---------------------------------------------------------------
+
+CREATE TABLE STORE (
+    store_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    website VARCHAR(2048),
+
+    CONSTRAINT chk_store_name
+        CHECK (TRIM(name) <> ''),
+
+    CONSTRAINT chk_store_website
+        CHECK (
+            website IS NULL OR
+            website REGEXP '^https?://'
+        ),
+
+    UNIQUE KEY uq_store_name (name)
+);
+
+CREATE TABLE OFFER (
+    offer_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_id BIGINT NOT NULL,
+    store_id BIGINT NOT NULL,
+    current_price DECIMAL(12,2) NOT NULL,
+    price_updated_at TIMESTAMP NOT NULL,
+
+    CONSTRAINT chk_offer_price
+        CHECK (current_price > 0),
+
+    UNIQUE KEY uq_offer_product_store
+        (product_id, store_id),
+
+    FOREIGN KEY (product_id)
+        REFERENCES PRODUCT(product_id),
+
+    FOREIGN KEY (store_id)
+        REFERENCES STORE(store_id)
+);
+
+
+CREATE TABLE PRICE_HISTORY (
+offer_id BIGINT NOT NULL,
+recorded_at TIMESTAMP NOT NULL,
+price DECIMAL(12,2) NOT NULL,
+
+CONSTRAINT chk_history_price
+        CHECK (price > 0),
+
+PRIMARY KEY(offer_id, recorded_at),
+FOREIGN KEY(offer_id) REFERENCES OFFER(offer_id)
+);
+
+
+
+CREATE TABLE APP_USER (
+    user_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    email VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(256) NOT NULL,
+    role VARCHAR(12) NOT NULL DEFAULT 'USER',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_user_role
+        CHECK (role IN ('USER', 'ADMIN')),
+
+    CONSTRAINT chk_user_email
+        CHECK (TRIM(email) <> ''),
+
+    UNIQUE KEY uq_user_email (email)
+);
+
+
+CREATE TABLE FAVORITE(
+user_id BIGINT NOT NULL,
+product_id BIGINT NOT NULL,
+added_at TIMESTAMP NOT NULL,
+
+PRIMARY KEY(user_id, product_id),
+FOREIGN KEY(user_id) REFERENCES APP_USER(user_id) ON DELETE CASCADE ,
+FOREIGN KEY(product_id) REFERENCES PRODUCT(product_id)
+);
+
+
+CREATE TABLE PRICE_ALERT (
+    alert_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    product_id BIGINT NOT NULL,
+    target_price DECIMAL(12,2) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    disabled_at TIMESTAMP NULL,
+
+    CONSTRAINT chk_alert_price
+        CHECK (target_price > 0),
+
+    UNIQUE KEY uq_alert_user_product
+        (user_id, product_id),
+
+    FOREIGN KEY (user_id)
+        REFERENCES APP_USER(user_id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (product_id)
+        REFERENCES PRODUCT(product_id)
+);
+
+
+CREATE TABLE NOTIFICATION (
+    notification_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    alert_id BIGINT NOT NULL,
+    offer_id BIGINT NOT NULL,
+    price_recorded_at TIMESTAMP NOT NULL,
+    target_at_event DECIMAL(12,2) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    read_at TIMESTAMP NULL,
+
+    CONSTRAINT chk_notification_target
+        CHECK (target_at_event > 0),
+
+    UNIQUE KEY uq_notification_event
+        (alert_id, offer_id, price_recorded_at),
+
+    FOREIGN KEY (alert_id)
+        REFERENCES PRICE_ALERT(alert_id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (offer_id, price_recorded_at)
+        REFERENCES PRICE_HISTORY(offer_id, recorded_at)
+);
+
+
+CREATE INDEX idx_offer_product_price
+ON OFFER(product_id, current_price);
+
+CREATE INDEX idx_alert_product_target
+ON PRICE_ALERT(product_id, target_price, disabled_at);
+
+CREATE INDEX idx_notification_alert_created
+ON NOTIFICATION(alert_id, created_at);
+
+
 -- CHECK kısıtları başka bir tabloyu okuyamadığı için bu iki kural tetikleyicilerde uygulanır.
 
 DELIMITER $$
@@ -290,5 +431,13 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Dahili hoparlörü olan amfi HEAD yapılamaz.';
     END IF;
 END$$
+
+    
+CREATE TRIGGER trg_alert_updated_at
+BEFORE UPDATE ON PRICE_ALERT
+FOR EACH ROW
+BEGIN
+    SET NEW.updated_at = CURRENT_TIMESTAMP;
+END
 
 DELIMITER ;
