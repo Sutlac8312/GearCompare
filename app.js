@@ -30,6 +30,7 @@ let filters = initialFilters();
 let reportFilters = { group: 'store', value: '', days: '30' };
 let historyOffer = '';
 let historyRequest;
+let adminStores = null;
 let registration = false;
 let pendingAlert = '';
 let statusTimer;
@@ -66,7 +67,7 @@ function render(focus = '') {
     karsilastir: comparePage,
     hesabim: () => accountPage(value, registration),
     raporlar: () => reportsPage(reportFilters),
-    yonetim: adminPage,
+    yonetim: () => adminPage(adminStores),
   };
   main.innerHTML = Object.hasOwn(renderPage, page) ? renderPage[page]() : notFound();
   tray.innerHTML = compareTray(page);
@@ -268,9 +269,13 @@ document.addEventListener('click', async (event) => {
     } else if ('signOut' in data) {
       if (usesDatabaseCatalog) await signOutDatabase();
       else updatePreferences({ userId: '' });
+      adminStores = null;
       registration = false;
       render('[data-account-form] input');
       announce('Oturum kapatıldı.');
+    } else if ('retryAdminStores' in data) {
+      await loadAdminStores();
+      if (button.isConnected) render('#admin-store');
     } else if (data.removeAlert) {
       const user = activeUser();
       if (!user) return;
@@ -299,6 +304,7 @@ async function handleAccount(form) {
   const password = input.get('password');
   if (usesDatabaseCatalog) {
     await signInDatabase(email, password, registration);
+    await loadAdminStores();
     announce(registration ? 'Hesap oluşturuldu.' : 'Giriş yapıldı.');
     registration = false;
     render('[data-sign-out]');
@@ -381,6 +387,7 @@ async function handleAdmin(form, entity) {
     }
     if (usesDatabaseCatalog) {
       await requestApi('api/admin/stores', 'POST', { name, website });
+      await loadAdminStores();
       if (form.isConnected) render('[data-admin="store"] input');
       announce('Mağaza eklendi.');
       return;
@@ -398,6 +405,20 @@ async function handleAdmin(form, entity) {
     const store = input.get('admin-store');
     const price = parsePrice(input.get('price'));
     if (!(price > 0 && price <= 10000000)) throw new Error('Geçerli bir teklif fiyatı gir.');
+    if (usesDatabaseCatalog) {
+      const outcome = await requestApi('api/admin/offers', 'PUT', { product, storeId: store, price });
+      if (outcome === 'UNCHANGED') return announce('Bu teklif zaten aynı fiyatta.');
+      historyRequest = undefined;
+      const message = await refreshDatabaseCatalog(outcome === 'CREATED' ? 'Teklif eklendi.' : 'Teklif ve fiyat geçmişi güncellendi.');
+      if (form.isConnected) {
+        form.elements.price.value = '';
+        currentOffer();
+      } else {
+        render();
+      }
+      announce(message);
+      return;
+    }
     const updated = commit((draft) => saveOffer(draft, product, store, price));
     form.elements.price.value = '';
     currentOffer();
@@ -412,6 +433,10 @@ async function refreshDatabaseCatalog(message) {
   } catch {
     return `${message} Kataloğu görmek için sayfayı yenile.`;
   }
+}
+
+async function loadAdminStores() {
+  adminStores = activeUser()?.role === 'ADMIN' ? await requestApi('api/admin/stores').catch(() => null) : null;
 }
 
 document.addEventListener('submit', async (event) => {
@@ -446,6 +471,7 @@ async function awaitDatabaseCatalog() {
   render();
   try {
     await Promise.all([loadDatabaseCatalog(), loadDatabaseUser().catch(() => {})]);
+    await loadAdminStores();
     catalogState = 'ready';
   } catch {
     catalogState = 'error';

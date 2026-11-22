@@ -40,6 +40,8 @@ UPDATE gearcompare_v2.app_user SET role = 'ADMIN' WHERE email = 'kendi-adresin@e
 
 Siteyi yenileyip **Yönetici paneli** bağlantısını aç. Yeni kayıtlar varsayılan olarak `USER` rolüyle oluşturulur. Favori, alarm ve bildirim API’lerinde kullanıcı kimliği sunucu oturumundan alınır.
 
+Yönetici panelinden ürün, mağaza ve teklif ekleyebilirsin. Bir teklif ilk kez kaydedildiğinde veya fiyatı değiştiğinde güncel fiyat ve geçmiş satırı aynı işlemde yazılır. Bildirim servisi bu işlemde yayımlanan `OfferPriceChanged` olayını senkron bir `@EventListener` ile dinleyebilir. Olaydaki `previousPrice` ilk teklifte `null` olur. Bildirim yazımı aynı işlemi kullanmalıdır.
+
 ### Mağaza fiyatları ve fiyat grafiği
 
 Mağaza fiyatları ve grafik, aynı MySQL veritabanındaki şu tablo ve sütunları okur. Tablo adlarını MySQL şemasında küçük harfle kullan.

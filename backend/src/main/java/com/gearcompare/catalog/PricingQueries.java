@@ -145,7 +145,7 @@ public class PricingQueries {
 
     public record ProductOffer(long offerId, String storeName, String website, BigDecimal currentPrice, Instant priceUpdatedAt) {}
 
-    public record OfferForUpdate(long offerId, BigDecimal currentPrice) {}
+    public record OfferForUpdate(long offerId, BigDecimal currentPrice, Instant priceUpdatedAt) {}
 
     public record StoreStatistics(
             long storeId,
@@ -170,7 +170,7 @@ public class PricingQueries {
 
     public OfferForUpdate findOfferForUpdate(long productId, long storeId) {
         return jdbc.query("""
-                SELECT offer_id, current_price
+                SELECT offer_id, current_price, price_updated_at
                 FROM offer
                 WHERE product_id = ?
                 AND store_id = ?
@@ -178,7 +178,8 @@ public class PricingQueries {
                 """,
                 (row, index) -> new OfferForUpdate(
                         row.getLong("offer_id"),
-                        row.getBigDecimal("current_price")),
+                        row.getBigDecimal("current_price"),
+                        row.getTimestamp("price_updated_at").toInstant()),
                 productId, storeId).stream().findFirst().orElse(null);
     }
 }

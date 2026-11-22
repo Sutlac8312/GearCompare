@@ -16,6 +16,7 @@ import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,10 +26,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminController {
     private final Accounts accounts;
     private final AdminCatalog catalog;
+    private final OfferWrites offers;
 
-    public AdminController(Accounts accounts, AdminCatalog catalog) {
+    public AdminController(Accounts accounts, AdminCatalog catalog, OfferWrites offers) {
         this.accounts = accounts;
         this.catalog = catalog;
+        this.offers = offers;
     }
 
     @GetMapping("/stores")
@@ -49,6 +52,12 @@ public class AdminController {
         accounts.requireAdmin(request);
         catalog.addProduct(input);
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping(value = "/offers", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public OfferWrites.Outcome saveOffer(HttpServletRequest request, @RequestBody OfferWrites.Input input) {
+        accounts.requireAdmin(request);
+        return offers.save(input);
     }
 
     @ExceptionHandler(DuplicateKeyException.class)
