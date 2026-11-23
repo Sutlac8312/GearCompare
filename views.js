@@ -1,5 +1,5 @@
 import { categories } from './catalog.js';
-import { catalog, activeUser, favorites, preferences, productOffers, bestPrice, getProduct, getStore, usesDatabaseCatalog, databasePricingAvailable, databaseAccountAlerts, databaseAccountNotifications, databaseReportData, databaseOffer } from './store.js';
+import { catalog, activeUser, favorites, preferences, productOffers, bestPrice, getProduct, getStore, usesDatabaseCatalog, databasePricingAvailable, databaseAccountAlerts, databaseAccountNotifications, databaseOffer } from './store.js';
 import { comparisonSpecs, detailFields, pickupRows, speakerSummary, specificationGroups, technicalGroups } from './specifications.js';
 import { icon, html, money, dateLabel, title, productLink, productLinkText, options, select, table, empty, priceChart } from './ui.js';
 
@@ -346,8 +346,8 @@ export function alertContents(product) {
     </form>` : '<p class="hint">Fiyat alarmı kurmak için giriş yap.</p><a class="button button-primary" href="#hesabim/hesap">Giriş yap</a>'}`;
 }
 
-export function reportsPage(filters) {
-  if (usesDatabaseCatalog) return databaseReportsPage(filters);
+export function reportsPage(filters, request) {
+  if (usesDatabaseCatalog) return databaseReportsPage(filters, request);
   const choices = filters.group === 'store' ? storeChoices() : categoryChoices();
   const groupId = (offer) => filters.group === 'store' ? offer.store : getProduct(offer.product).category;
   const groupOffers = catalog.offers.filter((offer) => getProduct(offer.product) && (!filters.value || groupId(offer) === filters.value));
@@ -387,13 +387,16 @@ export function reportsPage(filters) {
 }
 
 
-function databaseReportsPage(filters) {
-  const report = databaseReportData();
-  if (!report.available) {
-    return '<div class="shell interior"><div class="page-heading"><h1>Raporlar</h1><p>Mağaza ve kategori raporları için fiyat veritabanı hazır olmalı.</p></div></div>';
-  }
+function databaseReportsPage(filters, request) {
+  const heading = '<div class="page-heading"><h1>Raporlar</h1><p>Mağaza veya kategori bazında teklifleri ve fiyat değişimlerini incele.</p></div>';
+  const status = request?.state === 'error'
+    ? '<p role="status">Rapor verileri yüklenemedi.</p><button type="button" class="button button-outline" data-retry-reports>Tekrar dene</button>'
+    : '<p role="status">Rapor verileri yükleniyor…</p>';
+  const report = request?.data;
+  if (!databasePricingAvailable) return `<div class="shell interior">${heading}<p>Mağaza ve kategori raporları için fiyat veritabanı hazır olmalı.</p></div>`;
+  if (!report) return `<div class="shell interior">${heading}${status}</div>`;
   if (!report.stores.length && !report.categories.length) {
-    return '<div class="shell interior"><p role="status">Rapor verileri yükleniyor…</p></div>';
+    return `<div class="shell interior">${heading}<p>Henüz rapor verisi yok.</p></div>`;
   }
   const choices = filters.group === 'store'
     ? report.stores.map(({ storeId, name }) => [String(storeId), name])
@@ -412,10 +415,10 @@ function databaseReportsPage(filters) {
       : getProduct(offer.product)?.category !== filters.value)) return null;
     const percent = (summary.endingPrice - summary.beginningPrice) / summary.beginningPrice * 100;
     const formatted = new Intl.NumberFormat('tr-TR', { style: 'percent', maximumFractionDigits: 1, signDisplay: 'always' }).format(percent / 100);
-    return { offer, prior: summary.beginningPrice, percent, formatted };
+    return { offer, startPrice: summary.beginningPrice, endPrice: summary.endingPrice, percent, formatted };
   }).filter(Boolean).sort((a, b) => Math.abs(b.percent) - Math.abs(a.percent));
   return `<div class="shell interior">
-    <div class="page-heading"><h1>Raporlar</h1><p>Mağaza veya kategori bazında teklifleri ve fiyat değişimlerini incele.</p></div>
+    ${heading}
     <div class="report-filters">
       ${select('report-group', 'Rapor grubu', [['store', 'Mağazaya göre'], ['category', 'Kategoriye göre']], filters.group)}
       ${select('report-value', 'Rapor filtresi', [['', filters.group === 'store' ? 'Tüm mağazalar' : 'Tüm kategoriler'], ...choices], filters.value)}
@@ -424,8 +427,8 @@ function databaseReportsPage(filters) {
       ${table([filters.group === 'store' ? 'Mağaza' : 'Kategori', 'Ürün', 'Teklif', 'En düşük fiyat', 'Ortalama fiyat'], groups, 'Güncel teklif özeti')}
     </section>
     <section class="panel"><div class="section-heading"><h2>Fiyat değişimleri</h2>${select('report-days', 'Fiyat değişimi dönemi', [['7', 'Son 7 gün'], ['30', 'Son 30 gün'], ['', 'Tüm dönemler']], filters.days)}</div>
-      ${changes.length ? table(['Ürün', 'Mağaza', 'Önceki fiyat', 'Güncel fiyat', 'Değişim'], changes.map(({ offer, prior, percent, formatted }) => [
-        productLinkText(getProduct(offer.product)), html(getStore(offer.store).name), priceCell(prior), priceCell(offer.price),
+      ${request.state !== 'ready' ? status : changes.length ? table(['Ürün', 'Mağaza', 'Dönem başı fiyatı', 'Dönem sonu fiyatı', 'Değişim'], changes.map(({ offer, startPrice, endPrice, percent, formatted }) => [
+        productLinkText(getProduct(offer.product)), html(getStore(offer.store).name), priceCell(startPrice), priceCell(endPrice),
         `<span class="numeric ${percent < 0 ? 'decrease' : ''}">${formatted}</span>`,
       ]), 'Fiyat değişimleri') : '<p>Seçilen dönem ve filtre için fiyat değişimi yok.</p>'}
     </section>

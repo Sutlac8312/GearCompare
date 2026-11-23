@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/offers")
@@ -66,6 +67,7 @@ public class PricingController {
     public List<PricingQueries.PriceSummary> priceSummaries(
             @RequestParam Instant from,
             @RequestParam Instant to) {
+        if (!from.isBefore(to)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         return queries.findPriceSummaries(from, to);
     }
 

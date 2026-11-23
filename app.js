@@ -5,6 +5,7 @@ import {
   activeUser, favorites, parsePrice, saveOffer, notifyAlert, passwordDigest, usesDatabaseCatalog, loadDatabaseCatalog, loadPriceHistory,
   loadDatabaseUser, signInDatabase, signOutDatabase,
   requestApi, setFavorite, saveDatabaseAlert, removeDatabaseAlert, loadDatabaseReports, loadDatabaseAccountData,
+  databasePricingAvailable,
 } from './store.js';
 import { empty, money, productLink } from './ui.js';
 import {
@@ -28,6 +29,7 @@ const pages = {
 const initialFilters = () => ({ search: '', category: '', brand: '', sort: 'default' });
 let filters = initialFilters();
 let reportFilters = { group: 'store', value: '', days: '30' };
+let reportRequest;
 let historyOffer = '';
 let historyRequest;
 let adminStores = null;
@@ -61,12 +63,15 @@ function render(focus = '') {
   if (usesDatabaseCatalog && offer && historyRequest?.offerId !== offer.id) {
     refreshPriceHistory(offer.id);
   }
+  if (page === 'raporlar' && usesDatabaseCatalog && databasePricingAvailable && !reportRequest) {
+    refreshReports();
+  }
   const renderPage = {
     urunler: () => catalogPage(filters),
     urun: () => product ? productPage(product, offers, offer, historyRequest) : notFound(),
     karsilastir: comparePage,
     hesabim: () => accountPage(value, registration),
-    raporlar: () => reportsPage(reportFilters),
+    raporlar: () => reportsPage(reportFilters, reportRequest),
     yonetim: () => adminPage(adminStores),
   };
   main.innerHTML = Object.hasOwn(renderPage, page) ? renderPage[page]() : notFound();
@@ -86,6 +91,19 @@ async function refreshPriceHistory(offerId) {
   if (historyRequest === request) {
     render(document.activeElement?.id === 'history-offer' ? '#history-offer' : '');
   }
+}
+
+async function refreshReports(focus = '') {
+  const request = { state: 'loading', data: reportRequest?.data };
+  reportRequest = request;
+  if (focus) render(focus);
+  try {
+    request.data = await loadDatabaseReports(reportFilters.days);
+    request.state = 'ready';
+  } catch {
+    request.state = 'error';
+  }
+  if (reportRequest === request && route()[0] === 'raporlar') render(focus);
 }
 
 function notFound() {
@@ -134,6 +152,7 @@ window.addEventListener('hashchange', () => {
   if (dialog.open) dialog.close();
   historyOffer = '';
   historyRequest = undefined;
+  if (route()[0] !== 'raporlar') reportRequest = undefined;
   registration = false;
   render();
   window.scrollTo(0, 0);
@@ -183,11 +202,13 @@ document.addEventListener('change', ({ target }) => {
       render('#report-group');
       break;
     case 'report-value':
+      reportFilters.value = value;
+      render('#report-value');
+      break;
     case 'report-days':
       reportFilters.days = value;
-      if (usesDatabaseCatalog) {
-        loadDatabaseReports(value).then(() => render('#report-days')).catch((error) => announce(error.message));
-      } else render(`#${target.id}`);
+      if (usesDatabaseCatalog) refreshReports('#report-days');
+      else render('#report-days');
       break;
     case 'admin-category': {
       const type = categories[value].type;
@@ -229,6 +250,8 @@ document.addEventListener('click', async (event) => {
   try {
     if ('retryCatalog' in data) {
       awaitDatabaseCatalog();
+    } else if ('retryReports' in data) {
+      refreshReports('#report-days');
     } else if ('retryHistory' in data) {
       historyRequest = undefined;
       render('#history-offer');

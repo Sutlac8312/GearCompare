@@ -60,7 +60,7 @@ public class PricingQueries {
                 LEFT JOIN offer o ON s.store_id = o.store_id
                 GROUP BY s.store_id, s.name
                 """, (row, index) -> new StoreStatistics(
-                row.getLong("store_id"),
+                row.getString("store_id"),
                 row.getString("name"),
                 row.getLong("product_count"),
                 row.getLong("offer_count"),
@@ -119,29 +119,28 @@ public class PricingQueries {
 
     public List<PriceSummary> findPriceSummaries(Instant from, Instant to) {
         return jdbc.query("""
-                WITH ranked_prices AS (
-                    SELECT ph.offer_id, ph.recorded_at, ph.price,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY ph.offer_id
-                            ORDER BY ph.recorded_at ASC
-                        ) AS first_price,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY ph.offer_id
-                            ORDER BY ph.recorded_at DESC
-                        ) AS last_price
-                    FROM price_history ph
-                    WHERE ph.recorded_at >= ?
-                    AND ph.recorded_at < ?
+                SELECT o.offer_id,
+                    COALESCE(
+                        (SELECT h.price FROM price_history h
+                         WHERE h.offer_id = o.offer_id AND h.recorded_at <= ?
+                         ORDER BY h.recorded_at DESC LIMIT 1),
+                        (SELECT h.price FROM price_history h
+                         WHERE h.offer_id = o.offer_id AND h.recorded_at >= ? AND h.recorded_at < ?
+                         ORDER BY h.recorded_at LIMIT 1)
+                    ) AS beginning_price,
+                    (SELECT h.price FROM price_history h
+                     WHERE h.offer_id = o.offer_id AND h.recorded_at < ?
+                     ORDER BY h.recorded_at DESC LIMIT 1) AS ending_price
+                FROM offer o
+                WHERE EXISTS (
+                    SELECT 1 FROM price_history h
+                    WHERE h.offer_id = o.offer_id AND h.recorded_at >= ? AND h.recorded_at < ?
                 )
-                SELECT offer_id,
-                    MAX(CASE WHEN first_price = 1 THEN price END) AS beginning_price,
-                    MAX(CASE WHEN last_price = 1 THEN price END) AS ending_price
-                FROM ranked_prices
-                GROUP BY offer_id
+                ORDER BY o.offer_id
                 """, (row, index) -> new PriceSummary(
-                row.getLong("offer_id"),
+                row.getString("offer_id"),
                 row.getBigDecimal("beginning_price"),
-                row.getBigDecimal("ending_price")), from, to);
+                row.getBigDecimal("ending_price")), from, from, to, to, from, to);
     }
 
     public record Offer(String id, String product, Store store, BigDecimal price) {}
@@ -155,7 +154,7 @@ public class PricingQueries {
     public record OfferForUpdate(long offerId, BigDecimal currentPrice, Instant priceUpdatedAt) {}
 
     public record StoreStatistics(
-            long storeId,
+            String storeId,
             String name,
             long productCount,
             long offerCount,
@@ -174,7 +173,7 @@ public class PricingQueries {
     }
 
     public record PriceSummary(
-            long offerId,
+            String offerId,
             BigDecimal beginningPrice,
             BigDecimal endingPrice) {
     }
