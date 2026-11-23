@@ -4,7 +4,7 @@ import {
   catalog, preferences, commit, updatePreferences, getProduct, productOffers,
   activeUser, favorites, parsePrice, saveOffer, notifyAlert, passwordDigest, usesDatabaseCatalog, loadDatabaseCatalog, loadPriceHistory,
   loadDatabaseUser, signInDatabase, signOutDatabase,
-  requestApi, setFavorite, saveDatabaseAlert, removeDatabaseAlert, loadDatabaseReports,
+  requestApi, setFavorite, saveDatabaseAlert, removeDatabaseAlert, loadDatabaseReports, loadDatabaseAccountData,
 } from './store.js';
 import { empty, money, productLink } from './ui.js';
 import {
@@ -141,6 +141,14 @@ window.addEventListener('hashchange', () => {
   if (pendingAlert && route()[0] === 'urun' && route()[1] === pendingAlert && activeUser()) {
     openAlert(pendingAlert);
     pendingAlert = '';
+  }
+  if (usesDatabaseCatalog && catalogState === 'ready' && route()[0] === 'hesabim' && activeUser()) {
+    const hash = location.hash;
+    loadDatabaseAccountData().then(() => {
+      if (location.hash === hash && activeUser()) render();
+    }).catch((error) => {
+      if (location.hash === hash) announce(error.message);
+    });
   }
 });
 
@@ -322,7 +330,9 @@ async function handleAccount(form) {
     await loadAdminStores();
     announce(registration ? 'Hesap oluşturuldu.' : 'Giriş yapıldı.');
     registration = false;
-    render('[data-sign-out]');
+    const product = pendingAlert ? getProduct(pendingAlert) : null;
+    if (product) location.hash = productLink(product);
+    else render('[data-sign-out]');
     return;
   }
   let user = catalog.users.find((item) => item.email === email);

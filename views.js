@@ -219,7 +219,7 @@ export function productPage(product, offers, offer, historyRequest) {
         <div class="price-label">${offers.length ? 'En düşük fiyat' : pricesUnavailable ? 'Fiyat bilgisi yok' : 'Teklif yok'}</div>
         <div class="detail-price">${money(offers[0]?.price)}</div>
         <div class="inline-actions">
-          ${offers.length && !usesDatabaseCatalog ? `<button type="button" class="button button-primary" data-price-alert="${html(product.id)}">${icon('bell')} Fiyat alarmı kur</button>` : ''}
+          ${offers.length ? `<button type="button" class="button button-primary" data-price-alert="${html(product.id)}">${icon('bell')} Fiyat alarmı kur</button>` : ''}
           ${favoriteButton(product, true)}${compareButton(product)}
         </div>
       </div>
@@ -322,7 +322,8 @@ export function accountPage(tab, registration) {
   } else {
     const notifications = usesDatabaseCatalog ? databaseAccountNotifications() : catalog.notifications.filter((item) => item.user === user.id && getProduct(item.product));
     body = notifications.length ? `<section class="panel"><h2>Fiyat bildirimlerim</h2>${table(['Ürün', 'Mağaza', 'Fiyat', 'Tarih'], notifications.map((item) => [
-      productLinkText(getProduct(item.product)), html(item.store?.name ?? item.store), priceCell(item.price), dateLabel(item.date ?? item.createdAt),
+      productLinkText(getProduct(item.product)), html(usesDatabaseCatalog ? item.store : getStore(item.store)?.name),
+      priceCell(item.price), dateLabel(item.date ?? item.createdAt),
     ]), 'Fiyat bildirimleri')}</section>` : empty('bell', 'Henüz bildirim yok', 'Bir mağaza teklifinde hedef fiyatına ulaşıldığında burada görünecek.');
   }
 

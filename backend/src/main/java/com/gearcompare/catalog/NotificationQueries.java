@@ -1,11 +1,17 @@
 package com.gearcompare.catalog;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+
 import com.gearcompare.admin.OfferPriceChanged;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Repository
 public class NotificationQueries {
@@ -126,51 +132,73 @@ public class NotificationQueries {
                 """, notificationId, userId);
     }
 
-    public int createPriceAlert(long userId, long productId, BigDecimal targetPrice) {
-        return jdbc.update("""
-                INSERT INTO price_alert (
-                    user_id,
-                    product_id,
-                    target_price,
-                    created_at,
-                    updated_at,
-                    disabled_at
-                )
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
-                ON DUPLICATE KEY UPDATE target_price = VALUES(target_price),
-                updated_at = CURRENT_TIMESTAMP, disabled_at = NULL
-                """, userId, productId, targetPrice);
+    @Transactional
+    public void createPriceAlert(long userId, String productSlug, BigDecimal targetPrice) {
+        if (targetPrice == null || targetPrice.signum() <= 0 ||
+                targetPrice.compareTo(BigDecimal.valueOf(10_000_000)) > 0 || targetPrice.stripTrailingZeros().scale() > 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        // Serialize alert changes with offer writes for the same product.
+        long productId = jdbc.queryForList("SELECT product_id FROM product WHERE slug = ? FOR UPDATE", Long.class, productSlug)
+                .stream().findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        var previous = jdbc.query("""
+                SELECT alert_id, target_price, disabled_at FROM price_alert
+                WHERE user_id = ? AND product_id = ?
+                FOR UPDATE
+                """, (row, index) -> new StoredAlert(row.getLong("alert_id"), row.getBigDecimal("target_price"),
+                row.getTimestamp("disabled_at") == null), userId, productId).stream().findFirst().orElse(null);
+        if (previous == null) {
+            jdbc.update("INSERT INTO price_alert (user_id, product_id, target_price) VALUES (?, ?, ?)",
+                    userId, productId, targetPrice);
+        } else if (!previous.active() || previous.target().compareTo(targetPrice) != 0) {
+            jdbc.update("UPDATE price_alert SET target_price = ?, disabled_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE alert_id = ?",
+                    targetPrice, previous.id());
+        }
+        BigDecimal priorTarget = previous != null && previous.active() ? previous.target() : null;
+        if (priorTarget == null || targetPrice.compareTo(priorTarget) > 0) {
+            notifyForCurrentOffer(userId, productId, priorTarget);
+        }
     }
 
-    public int createPriceAlert(long userId, String productSlug, BigDecimal targetPrice) {
-        return createPriceAlert(userId, jdbc.queryForObject("SELECT product_id FROM product WHERE slug = ?",
-                Long.class, productSlug), targetPrice);
+    private void notifyForCurrentOffer(long userId, long productId, BigDecimal priorTarget) {
+        jdbc.update("""
+                INSERT INTO notification (alert_id, offer_id, price_recorded_at, target_at_event)
+                SELECT a.alert_id, o.offer_id, o.price_updated_at, a.target_price
+                FROM price_alert a
+                JOIN offer o ON o.product_id = a.product_id
+                WHERE a.user_id = ? AND a.product_id = ? AND o.current_price <= a.target_price
+                  AND (? IS NULL OR o.current_price > ?)
+                ORDER BY o.current_price, o.offer_id
+                LIMIT 1
+                ON DUPLICATE KEY UPDATE notification_id = notification.notification_id
+                """, userId, productId, priorTarget, priorTarget);
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
     public void createNotifications(OfferPriceChanged event) {
-        jdbc.query("""
-                SELECT alert_id, target_price FROM price_alert
-                WHERE product_id = ? AND target_price >= ?
-                AND (? IS NULL OR ? > target_price) AND disabled_at IS NULL
-                """, (row, index) -> {
-                    jdbc.update("""
-                            INSERT IGNORE INTO notification
-                                (alert_id, offer_id, price_recorded_at, target_at_event)
-                            VALUES (?, ?, ?, ?)
-                            """, row.getLong("alert_id"), event.offerId(),
-                            java.sql.Timestamp.from(event.recordedAt()), row.getBigDecimal("target_price"));
-                    return null;
-                }, event.productId(), event.price(), event.previousPrice(), event.previousPrice());
+        jdbc.update("""
+                INSERT INTO notification (alert_id, offer_id, price_recorded_at, target_at_event)
+                SELECT alert_id, ?, ?, target_price
+                FROM price_alert
+                WHERE product_id = ? AND disabled_at IS NULL AND target_price >= ?
+                  AND (? IS NULL OR ? > target_price)
+                ON DUPLICATE KEY UPDATE notification_id = notification.notification_id
+                """, event.offerId(), Timestamp.from(event.recordedAt()), event.productId(), event.price(),
+                event.previousPrice(), event.previousPrice());
     }
 
-
+    @Transactional
     public int disablePriceAlert(long alertId, long userId) {
+        if (jdbc.queryForList("""
+                SELECT product_id FROM product
+                WHERE product_id = (SELECT product_id FROM price_alert WHERE alert_id = ? AND user_id = ?)
+                FOR UPDATE
+                """, Long.class, alertId, userId).isEmpty()) return 0;
         return jdbc.update("""
-                UPDATE price_alert
-                SET disabled_at = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE alert_id = ?
-                AND user_id = ?
+                UPDATE price_alert SET disabled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE alert_id = ? AND user_id = ?
                 """, alertId, userId);
     }
+
+    private record StoredAlert(long id, BigDecimal target, boolean active) {}
 }

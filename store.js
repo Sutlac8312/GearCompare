@@ -10,6 +10,7 @@ let databaseUser = null;
 let databaseFavorites = [];
 let databaseAlerts = [];
 let databaseNotifications = [];
+let accountDataRequest = 0;
 export let databasePricingAvailable = false;
 let databaseReports = { stores: [], categories: [], summaries: [], days: '', available: false };
 
@@ -36,7 +37,8 @@ export async function requestApi(path, method = 'GET', data) {
     };
     throw new Error(messages[response.status] ?? 'İşlem tamamlanamadı. Tekrar dene.');
   }
-  return response.status === 204 ? null : response.json();
+  const body = await response.text();
+  return body ? JSON.parse(body) : null;
 }
 
 export async function loadDatabaseUser() {
@@ -45,15 +47,17 @@ export async function loadDatabaseUser() {
 }
 
 export async function loadDatabaseAccountData() {
+  const request = ++accountDataRequest;
   if (!databaseUser) {
     databaseFavorites = [];
     databaseAlerts = [];
     databaseNotifications = [];
     return;
   }
-  [databaseFavorites, databaseAlerts, databaseNotifications] = await Promise.all([
+  const data = await Promise.all([
     requestApi('api/products/favorites'), requestApi('api/notifications/alerts'), requestApi('api/notifications'),
   ]);
+  if (request === accountDataRequest) [databaseFavorites, databaseAlerts, databaseNotifications] = data;
 }
 
 export async function signInDatabase(email, password, register) {
@@ -147,7 +151,7 @@ export async function saveDatabaseAlert(slug, targetPrice) {
 
 export async function removeDatabaseAlert(alertId) {
   await requestApi(`api/notifications/alerts/${alertId}/disable`, 'PATCH');
-  databaseAlerts = databaseAlerts.filter(({ alertId: id }) => id !== alertId);
+  await loadDatabaseAccountData();
 }
 
 export function productOffers(id) {
