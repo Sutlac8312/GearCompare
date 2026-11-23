@@ -7,6 +7,7 @@ let serverProducts = null;
 let databaseOffers = [];
 const databaseStores = new Map();
 let databaseUser = null;
+let databaseFavorites = [];
 let databaseAlerts = [];
 let databaseNotifications = [];
 export let databasePricingAvailable = false;
